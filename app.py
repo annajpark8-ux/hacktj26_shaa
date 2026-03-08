@@ -800,20 +800,640 @@ FRONTEND_HTML = r"""<!DOCTYPE html>
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<link rel="stylesheet" href="/style.css">
 <title>QAOA Heart-Organ Matching</title>
-
+<link href="https://fonts.googleapis.com/css2?family=DM+Serif+Display:ital@0;1&family=DM+Mono:wght@300;400;500&family=DM+Sans:wght@300;400;500&display=swap" rel="stylesheet">
 <style>
-.page{display:none;padding:24px;max-width:700px}
-.page.on{display:block}
-</style>
+:root {
+  --bg:        #05080f;
+  --surface:   #090e1a;
+  --border:    rgba(180,210,255,0.08);
+  --border-hi: rgba(180,210,255,0.18);
+  --text:      #d8e8ff;
+  --muted:     #5a7299;
+  --accent:    #4f9fff;
+  --accent2:   #c084fc;
+  --red:       #ff4f6a;
+  --green:     #22d3a0;
+  --warn:      #f59e0b;
+  --glow:      rgba(79,159,255,0.15);
+  --glow2:     rgba(192,132,252,0.10);
+}
 
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+body {
+  font-family: 'DM Sans', sans-serif;
+  background: var(--bg);
+  color: var(--text);
+  min-height: 100vh;
+  overflow-x: hidden;
+}
+
+/* ── Animated background ── */
+body::before {
+  content: '';
+  position: fixed;
+  inset: 0;
+  background:
+    radial-gradient(ellipse 80% 60% at 10% 0%,   rgba(79,159,255,0.07) 0%, transparent 60%),
+    radial-gradient(ellipse 60% 50% at 90% 100%,  rgba(192,132,252,0.06) 0%, transparent 60%),
+    radial-gradient(ellipse 40% 40% at 50% 50%,   rgba(34,211,160,0.03) 0%, transparent 70%);
+  pointer-events: none;
+  z-index: 0;
+}
+
+/* Subtle grid overlay */
+body::after {
+  content: '';
+  position: fixed;
+  inset: 0;
+  background-image:
+    linear-gradient(rgba(79,159,255,0.03) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(79,159,255,0.03) 1px, transparent 1px);
+  background-size: 48px 48px;
+  pointer-events: none;
+  z-index: 0;
+}
+
+/* ── Header ── */
+header {
+  position: relative;
+  z-index: 10;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 20px 40px;
+  border-bottom: 1px solid var(--border);
+  backdrop-filter: blur(12px);
+  background: rgba(5,8,15,0.7);
+}
+
+.logo {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+
+.logo-icon {
+  width: 36px;
+  height: 36px;
+  position: relative;
+  flex-shrink: 0;
+}
+
+.logo-icon svg {
+  width: 100%;
+  height: 100%;
+  filter: drop-shadow(0 0 8px rgba(79,159,255,0.6));
+}
+
+.logo-text {
+  font-family: 'DM Serif Display', serif;
+  font-size: 18px;
+  letter-spacing: 0.02em;
+  color: var(--text);
+  line-height: 1.1;
+}
+
+.logo-text span {
+  display: block;
+  font-family: 'DM Mono', monospace;
+  font-size: 10px;
+  font-weight: 300;
+  color: var(--muted);
+  letter-spacing: 0.15em;
+  text-transform: uppercase;
+  margin-top: 2px;
+}
+
+.status-pill {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-family: 'DM Mono', monospace;
+  font-size: 11px;
+  color: var(--green);
+  background: rgba(34,211,160,0.06);
+  border: 1px solid rgba(34,211,160,0.2);
+  border-radius: 20px;
+  padding: 6px 14px;
+}
+
+.status-dot {
+  width: 6px; height: 6px;
+  border-radius: 50%;
+  background: var(--green);
+  box-shadow: 0 0 6px var(--green);
+  animation: pulse 2s ease-in-out infinite;
+}
+
+@keyframes pulse {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50% { opacity: 0.5; transform: scale(0.8); }
+}
+
+/* ── Navigation ── */
+nav {
+  position: relative;
+  z-index: 10;
+  display: flex;
+  gap: 0;
+  padding: 0 40px;
+  border-bottom: 1px solid var(--border);
+  background: rgba(5,8,15,0.5);
+  backdrop-filter: blur(8px);
+}
+
+nav button {
+  background: none;
+  border: none;
+  color: var(--muted);
+  padding: 16px 22px;
+  cursor: pointer;
+  font-family: 'DM Mono', monospace;
+  font-size: 12px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  border-bottom: 2px solid transparent;
+  transition: all 0.2s;
+  position: relative;
+}
+
+nav button:hover { color: var(--text); }
+
+nav button.on {
+  color: var(--accent);
+  border-bottom-color: var(--accent);
+}
+
+/* ── Main layout ── */
+main {
+  position: relative;
+  z-index: 1;
+  max-width: 780px;
+  margin: 0 auto;
+  padding: 40px 40px 80px;
+}
+
+/* ── Pages ── */
+.page { display: none; }
+.page.on { display: block; animation: fadeIn 0.3s ease; }
+
+@keyframes fadeIn {
+  from { opacity: 0; transform: translateY(8px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+/* ── About page ── */
+.about-hero {
+  margin-bottom: 40px;
+  padding-bottom: 40px;
+  border-bottom: 1px solid var(--border);
+}
+
+.about-hero h2 {
+  font-family: 'DM Serif Display', serif;
+  font-size: 38px;
+  line-height: 1.15;
+  color: var(--text);
+  margin-bottom: 16px;
+}
+
+.about-hero h2 em {
+  font-style: italic;
+  color: var(--accent);
+}
+
+.about-hero p {
+  font-size: 15px;
+  line-height: 1.75;
+  color: var(--muted);
+  max-width: 580px;
+}
+
+.about-cards {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 16px;
+  margin-bottom: 32px;
+}
+
+.about-card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 20px;
+  transition: border-color 0.2s;
+}
+
+.about-card:hover { border-color: var(--border-hi); }
+
+.about-card-label {
+  font-family: 'DM Mono', monospace;
+  font-size: 10px;
+  letter-spacing: 0.15em;
+  text-transform: uppercase;
+  color: var(--accent);
+  margin-bottom: 8px;
+}
+
+.about-card h3 {
+  font-family: 'DM Serif Display', serif;
+  font-size: 16px;
+  color: var(--text);
+  margin-bottom: 8px;
+}
+
+.about-card p {
+  font-size: 13px;
+  line-height: 1.6;
+  color: var(--muted);
+}
+
+/* ── Section label ── */
+.section-label {
+  font-family: 'DM Mono', monospace;
+  font-size: 10px;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--muted);
+  margin-bottom: 16px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.section-label::after {
+  content: '';
+  flex: 1;
+  height: 1px;
+  background: var(--border);
+}
+
+/* ── Form ── */
+.form-block {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  padding: 24px;
+  margin-bottom: 16px;
+}
+
+.row   { display: grid; grid-template-columns: 1fr 1fr;     gap: 16px; }
+.row3  { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 16px; }
+
+.field { display: flex; flex-direction: column; }
+
+label {
+  font-family: 'DM Mono', monospace;
+  font-size: 10px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--muted);
+  margin-bottom: 7px;
+}
+
+input, select {
+  background: rgba(255,255,255,0.03);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  color: var(--text);
+  padding: 9px 12px;
+  font-family: 'DM Mono', monospace;
+  font-size: 13px;
+  outline: none;
+  transition: border-color 0.2s, box-shadow 0.2s;
+  -webkit-appearance: none;
+}
+
+input:focus, select:focus {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px rgba(79,159,255,0.1);
+}
+
+select option { background: #0e1525; }
+
+hr {
+  border: none;
+  border-top: 1px solid var(--border);
+  margin: 20px 0;
+}
+
+details summary {
+  font-family: 'DM Mono', monospace;
+  font-size: 11px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--muted);
+  cursor: pointer;
+  user-select: none;
+  transition: color 0.2s;
+}
+
+details summary:hover { color: var(--accent); }
+details[open] summary { color: var(--accent); margin-bottom: 16px; }
+
+.adv-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 16px;
+}
+
+/* ── Run button ── */
+.btn-run {
+  width: 100%;
+  background: linear-gradient(135deg, var(--accent) 0%, #3a8aff 100%);
+  border: none;
+  border-radius: 10px;
+  color: #fff;
+  padding: 14px;
+  font-family: 'DM Mono', monospace;
+  font-size: 13px;
+  font-weight: 500;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  cursor: pointer;
+  transition: opacity 0.2s, transform 0.15s, box-shadow 0.2s;
+  box-shadow: 0 4px 24px rgba(79,159,255,0.25);
+  position: relative;
+  overflow: hidden;
+  margin-top: 4px;
+}
+
+.btn-run::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(135deg, rgba(255,255,255,0.12) 0%, transparent 60%);
+}
+
+.btn-run:hover:not(:disabled) {
+  opacity: 0.9;
+  transform: translateY(-1px);
+  box-shadow: 0 8px 32px rgba(79,159,255,0.35);
+}
+
+.btn-run:active:not(:disabled) { transform: translateY(0); }
+.btn-run:disabled { opacity: 0.4; cursor: not-allowed; transform: none; }
+
+/* ── Spinner ── */
+.spinner {
+  display: none;
+  width: 14px; height: 14px;
+  border: 2px solid rgba(255,255,255,0.3);
+  border-top-color: #fff;
+  border-radius: 50%;
+  animation: spin 0.7s linear infinite;
+  margin: 0 auto;
+}
+@keyframes spin { to { transform: rotate(360deg); } }
+
+/* ── Error ── */
+.err {
+  min-height: 20px;
+  color: var(--red);
+  font-family: 'DM Mono', monospace;
+  font-size: 12px;
+  margin-top: 10px;
+  padding: 0 2px;
+}
+
+/* ── Results ── */
+#output { margin-top: 32px; }
+
+.winner-card {
+  background: linear-gradient(135deg, rgba(79,159,255,0.07) 0%, rgba(192,132,252,0.05) 100%);
+  border: 1px solid rgba(79,159,255,0.3);
+  border-radius: 16px;
+  padding: 28px;
+  margin-bottom: 24px;
+  position: relative;
+  overflow: hidden;
+}
+
+.winner-card::before {
+  content: '';
+  position: absolute;
+  top: -40px; right: -40px;
+  width: 160px; height: 160px;
+  background: radial-gradient(circle, rgba(79,159,255,0.12) 0%, transparent 70%);
+  pointer-events: none;
+}
+
+.winner-eyebrow {
+  font-family: 'DM Mono', monospace;
+  font-size: 10px;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  color: var(--accent);
+  margin-bottom: 10px;
+}
+
+.winner-name {
+  font-family: 'DM Serif Display', serif;
+  font-size: 30px;
+  color: var(--text);
+  margin-bottom: 12px;
+  line-height: 1.1;
+}
+
+.winner-meta {
+  display: flex;
+  gap: 20px;
+  flex-wrap: wrap;
+}
+
+.winner-stat {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.winner-stat-val {
+  font-family: 'DM Mono', monospace;
+  font-size: 18px;
+  font-weight: 500;
+  color: var(--accent);
+}
+
+.winner-stat-label {
+  font-size: 11px;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+
+.divider-meta {
+  font-family: 'DM Mono', monospace;
+  font-size: 11px;
+  color: var(--muted);
+  margin-bottom: 16px;
+  padding-bottom: 16px;
+  border-bottom: 1px solid var(--border);
+}
+
+/* ── Candidate cards ── */
+.cand {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 16px 18px;
+  margin-bottom: 8px;
+  transition: border-color 0.2s, transform 0.15s;
+  cursor: default;
+}
+
+.cand:hover { border-color: var(--border-hi); transform: translateX(2px); }
+.cand.win   { border-color: rgba(79,159,255,0.35); }
+
+.cand-top {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 8px;
+}
+
+.cand-name {
+  font-size: 14px;
+  font-weight: 500;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.cand-score {
+  font-family: 'DM Mono', monospace;
+  font-size: 13px;
+  color: var(--accent);
+}
+
+.tag {
+  font-family: 'DM Mono', monospace;
+  font-size: 9px;
+  padding: 2px 8px;
+  border-radius: 10px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  font-weight: 500;
+}
+
+.tag.winner-tag { background: rgba(79,159,255,0.12); color: var(--accent); border: 1px solid rgba(79,159,255,0.25); }
+.tag.child-tag  { background: rgba(192,132,252,0.10); color: var(--accent2); border: 1px solid rgba(192,132,252,0.2); }
+
+.cand-meta {
+  font-size: 12px;
+  color: var(--muted);
+  display: flex;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+
+.cand-meta span {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+/* ── Vote bar ── */
+.vote-bar-wrap {
+  margin-top: 8px;
+  height: 3px;
+  background: rgba(255,255,255,0.05);
+  border-radius: 2px;
+  overflow: hidden;
+}
+
+.vote-bar {
+  height: 100%;
+  border-radius: 2px;
+  background: linear-gradient(90deg, var(--accent), var(--accent2));
+  transition: width 0.6s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.win .vote-bar { background: linear-gradient(90deg, var(--accent), #7dd3fc); }
+
+/* ── Eliminated section ── */
+.elim-section {
+  margin-top: 24px;
+}
+
+.elim-toggle {
+  background: none;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  color: var(--muted);
+  padding: 9px 16px;
+  font-family: 'DM Mono', monospace;
+  font-size: 11px;
+  letter-spacing: 0.1em;
+  cursor: pointer;
+  width: 100%;
+  text-align: left;
+  transition: border-color 0.2s, color 0.2s;
+}
+.elim-toggle:hover { border-color: var(--border-hi); color: var(--text); }
+
+.elim-list { margin-top: 8px; display: none; }
+.elim-list.open { display: block; }
+
+.elim-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 9px 12px;
+  border-radius: 8px;
+  font-size: 12px;
+  margin-bottom: 4px;
+  background: rgba(255,79,106,0.04);
+  border: 1px solid rgba(255,79,106,0.1);
+}
+
+.elim-name { color: var(--muted); }
+.elim-reason {
+  font-family: 'DM Mono', monospace;
+  font-size: 10px;
+  color: var(--red);
+  letter-spacing: 0.05em;
+}
+.elim-detail { font-size: 11px; color: rgba(255,79,106,0.5); }
+
+/* ── Responsive ── */
+@media (max-width: 600px) {
+  header { padding: 16px 20px; }
+  nav { padding: 0 20px; }
+  main { padding: 24px 20px 60px; }
+  .about-cards { grid-template-columns: 1fr; }
+  .row, .row3 { grid-template-columns: 1fr; }
+  .adv-grid { grid-template-columns: 1fr; }
+  .winner-meta { gap: 14px; }
+}
+</style>
 </head>
 <body>
 
 <header>
-  <h1>QAOA Heart-Organ Matching</h1>
-  <p>Quantum-optimized transplant recipient selection</p>
+  <div class="logo">
+    <div class="logo-icon">
+      <svg viewBox="0 0 36 36" fill="none" xmlns="http://www.w3.org/2000/svg">
+        <path d="M18 6C18 6 8 10 8 18C8 22.4 11.6 26 16 26H20C24.4 26 28 22.4 28 18C28 10 18 6 18 6Z" stroke="#4f9fff" stroke-width="1.5" fill="rgba(79,159,255,0.1)"/>
+        <circle cx="18" cy="18" r="3" fill="#4f9fff" opacity="0.8"/>
+        <line x1="18" y1="10" x2="18" y2="26" stroke="#4f9fff" stroke-width="0.75" stroke-dasharray="2 2" opacity="0.4"/>
+        <line x1="10" y1="18" x2="26" y2="18" stroke="#4f9fff" stroke-width="0.75" stroke-dasharray="2 2" opacity="0.4"/>
+        <circle cx="18" cy="10" r="1.5" fill="#c084fc" opacity="0.7"/>
+        <circle cx="18" cy="26" r="1.5" fill="#c084fc" opacity="0.7"/>
+        <circle cx="10" cy="18" r="1.5" fill="#c084fc" opacity="0.7"/>
+        <circle cx="26" cy="18" r="1.5" fill="#c084fc" opacity="0.7"/>
+      </svg>
+    </div>
+    <div class="logo-text">
+      QAOA Matching
+      <span>Quantum Heart Transplant</span>
+    </div>
+  </div>
+  <div class="status-pill">
+    <div class="status-dot"></div>
+    System Online
+  </div>
 </header>
 
 <nav>
@@ -821,80 +1441,243 @@ FRONTEND_HTML = r"""<!DOCTYPE html>
   <button onclick="tab(this,'match')">Match</button>
 </nav>
 
-<div id="about" class="page about on">
-  <h2>Problem</h2>
-  <p>Right now, 103,233 Americans are on the national transplant waiting list. On average, 13 people die every day waiting for an organ transplant, and more than 28,000 donated organs are wasted due to inefficiencies in the system</p>
-  <h2>What's the solution?</h2>
-  <p>YAPYAP</p>
-  <h2>What is this?</h2>
-  <p>YAPYAP</p>
-</div>
+<main>
 
-<div id="match" class="page">
+  <!-- ── ABOUT ── -->
+  <div id="about" class="page on">
+    <div class="about-hero">
+      <h2>Quantum-optimised<br><em>organ matching</em></h2>
+      <p>This system uses the Quantum Approximate Optimisation Algorithm (QAOA) running on Qiskit's AerSimulator to select the optimal heart transplant recipient from a pre-screened waitlist — balancing urgency, compatibility, fairness, and organ viability in a single pass.</p>
+    </div>
 
-  <div class="row">
-    <div class="field"><label>Blood Type</label><select id="d_abo"><option>A+</option><option>A-</option><option>B+</option><option>B-</option><option>AB+</option><option>AB-</option><option>O+</option><option>O-</option></select></div>
-    <div class="field"><label>Age</label><input type="number" id="d_age" value="35"></div>
-  </div>
-
-  <div class="row3">
-    <div class="field"><label>BSA (m&sup2;)</label><input type="number" id="d_bsa" value="1.80" step="0.01"></div>
-    <div class="field"><label>Latitude</label><input type="number" id="d_lat" value="38.8838" step="0.0001"></div>
-    <div class="field"><label>Longitude</label><input type="number" id="d_lon" value="-77.105" step="0.0001"></div>
-  </div>
-
-  <div class="field"><label>Max Travel Time (hours)</label><input type="number" id="max_h" value="5" step="0.5"></div>
-
-  <hr>
-  <details style="margin-bottom:12px">
-    <summary style="cursor:pointer;font-size:13px;color:#7d8590">Advanced settings</summary>
-    <div style="margin-top:12px">
-      <div class="row">
-        <div class="field"><label>QAOA Depth</label><input type="number" id="q_depth" value="5" min="1" max="10"></div>
-        <div class="field"><label>Restarts</label><input type="number" id="q_restarts" value="20" min="5"></div>
+    <div class="section-label">How it works</div>
+    <div class="about-cards">
+      <div class="about-card">
+        <div class="about-card-label">Step 01</div>
+        <h3>Hard Filtering</h3>
+        <p>Candidates are eliminated by ABO blood type incompatibility, travel time exceeding the ischaemic window, and BSA size mismatch.</p>
       </div>
-      <div class="row">
-        <div class="field"><label>Shots/eval</label><input type="number" id="q_shots" value="4096" min="512" step="512"></div>
-        <div class="field"><label>CVaR &alpha;</label><input type="number" id="q_alpha" value="0.25" min="0.05" max="1" step="0.05"></div>
+      <div class="about-card">
+        <div class="about-card-label">Step 02</div>
+        <h3>Score Encoding</h3>
+        <p>Six clinical factors — urgency, BSA similarity, CPRA, wait time, distance, and paediatric status — are normalised into a cost Hamiltonian.</p>
+      </div>
+      <div class="about-card">
+        <div class="about-card-label">Step 03</div>
+        <h3>QAOA Circuit</h3>
+        <p>A parameterised quantum circuit is compiled once and optimised over many shots using CVaR as the objective to focus on high-quality solutions.</p>
+      </div>
+      <div class="about-card">
+        <div class="about-card-label">Step 04</div>
+        <h3>Decision</h3>
+        <p>A final high-shot measurement round produces a probability distribution; the majority-vote winner across valid (single-selection) bitstrings is selected.</p>
       </div>
     </div>
-  </details>
-  <button class="go" id="btn" onclick="run()">Run Match</button>
-  <div class="err" id="err"></div>
-  <div id="output"></div>
+  </div>
 
-</div>
+  <!-- ── MATCH ── -->
+  <div id="match" class="page">
+
+    <div class="section-label">Donor information</div>
+    <div class="form-block">
+      <div class="row" style="margin-bottom:16px">
+        <div class="field">
+          <label>Blood Type</label>
+          <select id="d_abo">
+            <option>A+</option><option>A-</option><option>B+</option><option>B-</option>
+            <option>AB+</option><option>AB-</option><option>O+</option><option>O-</option>
+          </select>
+        </div>
+        <div class="field">
+          <label>Age</label>
+          <input type="number" id="d_age" value="35">
+        </div>
+      </div>
+      <div class="row3" style="margin-bottom:16px">
+        <div class="field">
+          <label>BSA (m²)</label>
+          <input type="number" id="d_bsa" value="1.80" step="0.01">
+        </div>
+        <div class="field">
+          <label>Latitude</label>
+          <input type="number" id="d_lat" value="38.8838" step="0.0001">
+        </div>
+        <div class="field">
+          <label>Longitude</label>
+          <input type="number" id="d_lon" value="-77.1050" step="0.0001">
+        </div>
+      </div>
+      <div class="field">
+        <label>Max Travel Time (hours)</label>
+        <input type="number" id="max_h" value="5" step="0.5">
+      </div>
+    </div>
+
+    <div class="section-label">Algorithm settings</div>
+    <div class="form-block">
+      <details>
+        <summary>Advanced parameters</summary>
+        <div class="adv-grid">
+          <div class="field">
+            <label>QAOA Depth</label>
+            <input type="number" id="q_depth" value="5" min="1" max="10">
+          </div>
+          <div class="field">
+            <label>Restarts</label>
+            <input type="number" id="q_restarts" value="20" min="5">
+          </div>
+          <div class="field">
+            <label>Shots / eval</label>
+            <input type="number" id="q_shots" value="4096" min="512" step="512">
+          </div>
+          <div class="field">
+            <label>CVaR α</label>
+            <input type="number" id="q_alpha" value="0.25" min="0.05" max="1" step="0.05">
+          </div>
+        </div>
+      </details>
+    </div>
+
+    <button class="btn-run" id="btn" onclick="run()">
+      Run Quantum Match
+    </button>
+    <div class="err" id="err"></div>
+
+    <div id="output"></div>
+  </div>
+
+</main>
 
 <script>
-function tab(el,id){document.querySelectorAll('nav button').forEach(b=>b.classList.remove('on'));el.classList.add('on');document.querySelectorAll('.page').forEach(p=>p.classList.remove('on'));document.getElementById(id).classList.add('on')}
-async function run(){
-  const btn=document.getElementById('btn');btn.disabled=true;btn.textContent='Running...';
-  document.getElementById('err').textContent='';document.getElementById('output').innerHTML='';
-  const fd=new FormData();
-  fd.append('donor_abo',document.getElementById('d_abo').value);
-  fd.append('donor_age',document.getElementById('d_age').value);
-  fd.append('donor_bsa',document.getElementById('d_bsa').value);
-  fd.append('donor_latitude',document.getElementById('d_lat').value);
-  fd.append('donor_longitude',document.getElementById('d_lon').value);
-  fd.append('w_bsa','0.20');fd.append('w_urgency','0.25');fd.append('w_waiting','0.15');
-  fd.append('w_distance','0.15');fd.append('w_pediatric','0.10');fd.append('w_cpra','0.15');
-  fd.append('qaoa_depth',document.getElementById('q_depth').value);
-  fd.append('n_shots',document.getElementById('q_shots').value);
-  fd.append('n_shots_final','16384');
-  fd.append('cvar_alpha',document.getElementById('q_alpha').value);
-  fd.append('n_restarts',document.getElementById('q_restarts').value);
+function tab(el, id) {
+  document.querySelectorAll('nav button').forEach(b => b.classList.remove('on'));
+  el.classList.add('on');
+  document.querySelectorAll('.page').forEach(p => p.classList.remove('on'));
+  document.getElementById(id).classList.add('on');
+}
+
+async function run() {
+  const btn = document.getElementById('btn');
+  btn.disabled = true;
+  btn.textContent = 'Running…';
+  document.getElementById('err').textContent = '';
+  document.getElementById('output').innerHTML = '';
+
+  const fd = new FormData();
+  fd.append('donor_abo',       document.getElementById('d_abo').value);
+  fd.append('donor_age',       document.getElementById('d_age').value);
+  fd.append('donor_bsa',       document.getElementById('d_bsa').value);
+  fd.append('donor_latitude',  document.getElementById('d_lat').value);
+  fd.append('donor_longitude', document.getElementById('d_lon').value);
+  fd.append('w_bsa',           '0.20');
+  fd.append('w_urgency',       '0.25');
+  fd.append('w_waiting',       '0.15');
+  fd.append('w_distance',      '0.15');
+  fd.append('w_pediatric',     '0.10');
+  fd.append('w_cpra',          '0.15');
+  fd.append('qaoa_depth',      document.getElementById('q_depth').value);
+  fd.append('n_shots',         document.getElementById('q_shots').value);
+  fd.append('n_shots_final',   '16384');
+  fd.append('cvar_alpha',      document.getElementById('q_alpha').value);
+  fd.append('n_restarts',      document.getElementById('q_restarts').value);
   fd.append('max_travel_hours',document.getElementById('max_h').value);
   fd.append('penalty_strength','10.0');
-  try{
-    const res=await fetch('/api/match',{method:'POST',body:fd});
-    const d=await res.json();
-    if(!res.ok){document.getElementById('err').textContent=d.detail||'Error';return}
-    let h='<div class="winner"><h3>Selected Recipient</h3><div class="name">'+d.winner_name+'</div><div class="score">Score: '+d.winner_composite_score+' &middot; '+d.candidates_after_filter+'/'+d.total_candidates_csv+' candidates passed filters &middot; '+d.runtime_seconds+'s</div></div>';
-    const cs=[...d.candidates].sort((a,b)=>b.votes-a.votes);
-    cs.forEach(c=>{h+='<div class="cand'+(c.is_winner?' win':'')+'"><div class="top"><span class="cname">'+c.name+(c.is_winner?'<span class="tag star">WINNER</span>':'')+(c.is_child?'<span class="tag child">CHILD</span>':'')+'</span><span class="cscore">'+c.composite_score+'</span></div><div class="meta">Urgency '+c.urgency_level+' &middot; BSA '+c.bsa_similarity+' &middot; '+c.distance_time_hours+'h &middot; CPRA '+c.cpra_score+'% &middot; '+c.waiting_time_days+'d wait &middot; '+c.votes+' votes ('+(c.probability*100).toFixed(1)+'%)</div></div>'});
-    document.getElementById('output').innerHTML=h;
-  }catch(e){document.getElementById('err').textContent='Connection failed: '+e.message}
-  finally{btn.disabled=false;btn.textContent='Run Match'}
+
+  try {
+    const res = await fetch('/api/match', { method: 'POST', body: fd });
+    const d   = await res.json();
+    if (!res.ok) { document.getElementById('err').textContent = d.detail || 'Error'; return; }
+
+    const maxVotes = Math.max(...d.candidates.map(c => c.votes), 1);
+    const sorted   = [...d.candidates].sort((a, b) => b.votes - a.votes);
+
+    let h = `
+      <div class="winner-card">
+        <div class="winner-eyebrow">Selected Recipient</div>
+        <div class="winner-name">${d.winner_name}</div>
+        <div class="winner-meta">
+          <div class="winner-stat">
+            <div class="winner-stat-val">${d.winner_composite_score}</div>
+            <div class="winner-stat-label">Score</div>
+          </div>
+          <div class="winner-stat">
+            <div class="winner-stat-val">${d.candidates_after_filter} / ${d.total_candidates_csv}</div>
+            <div class="winner-stat-label">Passed filters</div>
+          </div>
+          <div class="winner-stat">
+            <div class="winner-stat-val">${d.runtime_seconds}s</div>
+            <div class="winner-stat-label">Runtime</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="section-label" style="margin-top:8px">Candidates</div>
+    `;
+
+    sorted.forEach(c => {
+      const pct = ((c.votes / maxVotes) * 100).toFixed(1);
+      h += `
+        <div class="cand ${c.is_winner ? 'win' : ''}">
+          <div class="cand-top">
+            <div class="cand-name">
+              ${c.name}
+              ${c.is_winner ? '<span class="tag winner-tag">Winner</span>' : ''}
+              ${c.is_child  ? '<span class="tag child-tag">Child</span>'  : ''}
+            </div>
+            <div class="cand-score">${c.composite_score}</div>
+          </div>
+          <div class="cand-meta">
+            <span>Urgency ${c.urgency_level}</span>
+            <span>BSA ${c.bsa_similarity}</span>
+            <span>${c.distance_time_hours}h travel</span>
+            <span>CPRA ${c.cpra_score}%</span>
+            <span>${c.waiting_time_days}d wait</span>
+            <span>${c.votes} votes (${(c.probability * 100).toFixed(1)}%)</span>
+          </div>
+          <div class="vote-bar-wrap">
+            <div class="vote-bar" style="width:${pct}%"></div>
+          </div>
+        </div>
+      `;
+    });
+
+    if (d.eliminated && d.eliminated.length > 0) {
+      h += `
+        <div class="elim-section">
+          <button class="elim-toggle" onclick="toggleElim(this)">
+            ▸ ${d.eliminated.length} candidate${d.eliminated.length > 1 ? 's' : ''} eliminated by filters
+          </button>
+          <div class="elim-list">
+            ${d.eliminated.map(e => `
+              <div class="elim-item">
+                <span class="elim-name">${e.name}</span>
+                <span>
+                  <span class="elim-reason">${e.reason}</span>
+                  <span class="elim-detail"> — ${e.detail}</span>
+                </span>
+              </div>
+            `).join('')}
+          </div>
+        </div>
+      `;
+    }
+
+    document.getElementById('output').innerHTML = h;
+
+  } catch (e) {
+    document.getElementById('err').textContent = 'Connection failed: ' + e.message;
+  } finally {
+    btn.disabled = false;
+    btn.textContent = 'Run Quantum Match';
+  }
+}
+
+function toggleElim(btn) {
+  const list = btn.nextElementSibling;
+  list.classList.toggle('open');
+  btn.textContent = list.classList.contains('open')
+    ? btn.textContent.replace('▸', '▾')
+    : btn.textContent.replace('▾', '▸');
 }
 </script>
 </body>
