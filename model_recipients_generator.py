@@ -1,5 +1,5 @@
 import random
-import numpy as np
+import numpy as np 
 import pandas as pd
 
 names = [
@@ -131,22 +131,24 @@ hospital_addresses = [
     "2700 Grant Rd, Mountain View, CA 94040",
 ]
 
-def generate_recipients(n: int = 100, filepath: str = "recipients.csv", seed: int = 42) -> pd.DataFrame:
+def generate_recipients(n=100, filepath="recipients.csv", seed=42):
     rng = np.random.default_rng(seed)
 
     df = pd.DataFrame({
-        "Name":                 rng.choice(names, size=n),
-        "ABO":                  rng.choice(blood_types, size=n),
-        "Age":                  rng.integers(18, 75, size=n),
-        "BSA":                  np.round(rng.uniform(1.4, 2.5, size=n), 1),
-        "CPRA":                 rng.integers(0, 100, size=n),
-        "Waiting Time (days)":  rng.integers(0, 2000, size=n),
-        "Hospital Address":     rng.choice(hospital_addresses, size=n),
-        "Urgency":              rng.integers(1, 6, size=n),
+        "Name": rng.choice(names, size=n),
+        "ABO": rng.choice(blood_types, size=n),
+        "Age": rng.integers(18, 75, size=n),
+        "BSA": np.round(rng.uniform(1.4, 2.5, size=n), 1),
+        "CPRA": rng.integers(0, 100, size=n),
+        "Waiting_Time_Days": rng.integers(0, 2000, size=n),
+        "Latitude": rng.uniform(24.5, 49.5, size=n),
+        "Longitude": rng.uniform(-125.0, -67.0, size=n),
+        "Urgency": rng.integers(1, 6, size=n),
     })
 
     df.to_csv(filepath, index=False)
     return df
+
 
 df = generate_recipients()
 print(df.head())
