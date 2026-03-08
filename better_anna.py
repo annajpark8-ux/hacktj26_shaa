@@ -85,32 +85,6 @@ def compute_composite_scores(
 # =============================================================================
 # 3. COST HAMILTONIAN ENCODING
 # =============================================================================
-#
-# The cost Hamiltonian for "select exactly one of n items" is:
-#
-#   C = Σ_i  c_i · Z̃_i  −  λ · (Σ_i Z̃_i − 1)²
-#
-# where Z̃_i = (I − Z_i)/2  maps |0⟩→0, |1⟩→1  (occupation number).
-#
-# Expanding the penalty:
-#   (Σ Z̃_i − 1)² = (Σ Z̃_i)² − 2(Σ Z̃_i) + 1
-#                  = Σ_i Z̃_i² + Σ_{i≠j} Z̃_i Z̃_j − 2 Σ_i Z̃_i + 1
-#                  = Σ_i Z̃_i(1 − 2) + Σ_{i≠j} Z̃_i Z̃_j + 1   [since Z̃² = Z̃]
-#                  = −Σ_i Z̃_i + Σ_{i≠j} Z̃_i Z̃_j + 1
-#
-# So C becomes:
-#   C = Σ_i (c_i + λ) Z̃_i  −  λ Σ_{i<j} Z̃_i Z̃_j  −  λ
-#
-# In terms of Pauli Z (where Z̃ = (I−Z)/2):
-#   Z̃_i Z̃_j = (I − Z_i − Z_j + Z_i Z_j) / 4
-#   Z̃_i      = (I − Z_i) / 2
-#
-# This gives us the gate decomposition:
-#   • Single-qubit Z rotations (RZ gates) for linear terms
-#   • Two-qubit ZZ interactions (RZZ gates) for quadratic terms
-#   • A global phase (ignorable)
-#
-# =============================================================================
 
 def _compute_hamiltonian_coefficients(
     composite_scores: np.ndarray,
