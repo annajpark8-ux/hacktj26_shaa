@@ -15,7 +15,7 @@ import traceback
 
 # ---- FastAPI ----
 from fastapi import FastAPI, Form, HTTPException
-from fastapi.responses import HTMLResponse
+from fastapi.responses import HTMLResponse, FileResponse
 import uvicorn
 
 # =============================================================================
@@ -620,6 +620,10 @@ CANDIDATES = read_candidates_csv(CSV_PATH)
 def serve_frontend():
     return FRONTEND_HTML
 
+@app.get("/style.css")
+def serve_css():
+    css_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'style.css')
+    return FileResponse(css_path, media_type="text/css")
 
 @app.get("/health")
 def health():
@@ -796,6 +800,7 @@ FRONTEND_HTML = r"""<!DOCTYPE html>
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
+<link rel="stylesheet" href="/style.css">
 <title>QAOA Heart-Organ Matching</title>
 
 <style>
@@ -820,7 +825,7 @@ FRONTEND_HTML = r"""<!DOCTYPE html>
   <h2>Problem</h2>
   <p>Right now, 103,233 Americans are on the national transplant waiting list. On average, 13 people die every day waiting for an organ transplant, and more than 28,000 donated organs are wasted due to inefficiencies in the system</p>
   <h2>What's the solution?</h2>
-  <p>Quantum Organ Recovery & Exchange, or QORE, optimizes organ donor-recipient matching by analyzing blood type, age, BSA, CPRA, waiting time, and transport distance. With quantum computing, all variables are evaluated parallely, finding optimal matches faster, saving more lives.</p>
+  <p>YAPYAP</p>
   <h2>What is this?</h2>
   <p>YAPYAP</p>
 </div>
