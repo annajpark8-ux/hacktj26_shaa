@@ -1,109 +1,447 @@
 """
 ================================================================================
-QAOA Heart-Organ Matching  —  Qiskit + AerSimulator Backend
+QAOA Heart-Organ Matching  —  Full CSV-to-Match Pipeline
 ================================================================================
 
-WHAT THIS VERSION DOES DIFFERENTLY:
-    The previous "from-scratch" versions manually evolved a statevector
-    and sampled from it.  This version uses Qiskit's circuit model:
-
-    1. Builds a real QuantumCircuit with parameterized gates.
-    2. Runs it on AerSimulator (Qiskit Aer's shot-based simulator).
-    3. Uses Qiskit's Parameter binding for efficient re-evaluation
-       during the classical optimization loop.
-
-WHY THIS MATTERS:
-    • The circuit is now a first-class Qiskit object — you can
-      inspect it, draw it, transpile it for real hardware, or
-      swap AerSimulator for an IBM Quantum backend with one line.
-    • AerSimulator applies realistic noise models if configured,
-      so you can study how hardware noise affects matching quality.
-    • Gate-level decomposition (RZZ, RX) matches what a real QPU
-      executes, giving accurate depth/gate-count estimates.
-    • Parameter binding avoids rebuilding the circuit each optimizer
-      iteration — Qiskit compiles once and rebinds parameters, which
-      is significantly faster.
+PIPELINE:
+    1. Read donor info (ABO, age, BSA, lat/lon).
+    2. Read recipient CSV (name, abo, age, bsa, cpra, wait, lat, lon, urgency).
+    3. FILTER — eliminate incompatible candidates:
+         a. ABO blood type incompatibility
+         b. Travel time > 5 hours (haversine distance / transport speed)
+         c. Donor BSA < 70% of recipient BSA (undersized organ)
+    4. BUILD Recipients from surviving candidates, computing:
+         - bsa_similarity: how close donor/recipient BSA are (0–1)
+         - distance_time_hours: estimated travel time from coordinates
+         - is_child: age < 18
+    5. RUN QAOA to select the optimal recipient.
 
 INSTALL:
-    pip install qiskit qiskit-aer numpy scipy
+    pip install numpy scipy
 
-SWAP TO REAL HARDWARE:
-    Replace AerSimulator() with:
-        from qiskit_ibm_runtime import QiskitRuntimeService, SamplerV2
-        service = QiskitRuntimeService(channel="ibm_quantum")
-        backend = service.least_busy(min_num_qubits=n)
-    and run through SamplerV2.  The circuit, parameters, and
-    post-processing are identical.
+    For the Qiskit version, also: pip install qiskit qiskit-aer
+
+NOTE ON DISTANCE:
+    Travel time is estimated as haversine great-circle distance
+    divided by an average transport speed (default 80 km/h for
+    helicopter door-to-door).  Adjust TRANSPORT_SPEED_KMH for
+    your transport mode.
 ================================================================================
 """
 
+import csv
 import numpy as np
 from collections import Counter
 from scipy.optimize import minimize
 from dataclasses import dataclass
-from typing import List, Tuple, Dict
+from typing import List, Tuple, Dict, Optional
+from math import radians, sin, cos, sqrt, atan2
 import time
-
-# ---- Qiskit imports ----
-from qiskit import QuantumCircuit
-from qiskit.circuit import Parameter, ParameterVector
-from qiskit_aer import AerSimulator
+import sys
+import os
 
 
 # =============================================================================
-# 1. DATA MODEL
+# 1. DATA MODELS
 # =============================================================================
 
 @dataclass
-class Recipient:
-    """One pre-screened compatible transplant candidate."""
+class Donor:
+    """The donated heart and its donor's attributes."""
+    abo: str            # e.g. "A+", "O-", "AB+"
+    age: int
+    bsa: float          # body surface area in m²
+    latitude: float     # hospital latitude
+    longitude: float    # hospital longitude
+
+
+@dataclass
+class CsvCandidate:
+    """Raw candidate row from the CSV before any filtering."""
     name: str
-    compatibility_score: float   # 0.0–1.0
-    urgency_level: int           # 1–4
-    waiting_time_days: int
-    distance_km: float
+    abo: str
+    age: int
+    bsa: float
+    cpra: float         # 0–100
+    waiting_time_days: float
+    latitude: float
+    longitude: float
+    urgency: int        # 1–6 (1 = most urgent)
+
+
+@dataclass
+class Recipient:
+    """
+    A filtered, QAOA-ready candidate.
+
+    Fields:
+        name:                patient name
+        bsa_similarity:      how well the donor organ size matches (0–1)
+        urgency_level:       1–6 (1 = most urgent)
+        waiting_time_days:   days on the waitlist
+        distance_time_hours: estimated travel time donor→recipient hospital
+        is_child:            True if age < 18
+        cpra_score:          0–100 (panel reactive antibodies)
+    """
+    name: str
+    bsa_similarity: float
+    urgency_level: int
+    waiting_time_days: float
+    distance_time_hours: float
     is_child: bool
-    cpra_score: float            # 0–100
+    cpra_score: float
 
 
 @dataclass
 class MatchingWeights:
-    """Policy weights for each factor (normalized internally)."""
-    compatibility: float = 0.25
-    urgency: float       = 0.25
-    waiting_time: float  = 0.15
-    distance: float      = 0.15
-    pediatric: float     = 0.10
-    cpra: float          = 0.10
+    """Policy weights for the 6 QAOA factors."""
+    bsa_similarity: float = 0.20   # organ size match
+    urgency: float        = 0.25   # medical urgency
+    waiting_time: float   = 0.15   # fairness
+    distance: float       = 0.15   # organ viability (ischemic time)
+    pediatric: float      = 0.10   # pediatric priority
+    cpra: float           = 0.15   # sensitized patient priority
 
 
 # =============================================================================
-# 2. SCORE NORMALIZATION & COMPOSITE  (unchanged)
+# 2. CSV READING
+# =============================================================================
+
+def read_candidates_csv(filepath: str) -> List[CsvCandidate]:
+    """
+    Parse a CSV file into CsvCandidate objects.
+
+    Expected columns (case-insensitive, order-independent):
+        name, abo, age, bsa, cpra, waiting_time_days,
+        latitude, longitude, urgency
+    """
+    candidates = []
+
+    with open(filepath, 'r', encoding='utf-8-sig') as f:
+        reader = csv.DictReader(f)
+
+        # Normalize column names: strip whitespace, lowercase
+        reader.fieldnames = [col.strip().lower().replace(' ', '_') for col in reader.fieldnames]
+
+        for row in reader:
+            candidates.append(CsvCandidate(
+                name=row['name'].strip(),
+                abo=row['abo'].strip().upper(),
+                age=int(row['age'].strip()),
+                bsa=float(row['bsa'].strip()),
+                cpra=float(row['cpra'].strip()),
+                waiting_time_days=float(row['waiting_time_days'].strip()),
+                latitude=float(row['latitude'].strip()),
+                longitude=float(row['longitude'].strip()),
+                urgency=int(row['urgency'].strip()),
+            ))
+
+    return candidates
+
+
+# =============================================================================
+# 3. ABO BLOOD TYPE COMPATIBILITY
+# =============================================================================
+#
+# Heart transplant ABO rules (recipient can receive from):
+#   O  can receive from:  O only
+#   A  can receive from:  A, O
+#   B  can receive from:  B, O
+#   AB can receive from:  A, B, AB, O  (universal recipient)
+#
+# Rh factor (+/-) is generally NOT a barrier for solid organ
+# transplants (unlike blood transfusions), so we strip it.
+# =============================================================================
+
+# Maps each recipient base type → set of compatible donor base types
+ABO_COMPATIBILITY = {
+    'O':  {'O'},
+    'A':  {'A', 'O'},
+    'B':  {'B', 'O'},
+    'AB': {'A', 'B', 'AB', 'O'},
+}
+
+
+def _strip_rh(abo: str) -> str:
+    """
+    Extract the base ABO type, ignoring Rh factor.
+    'A+' → 'A',  'AB-' → 'AB',  'O+' → 'O'
+    """
+    return abo.replace('+', '').replace('-', '')
+
+
+def is_abo_compatible(donor_abo: str, recipient_abo: str) -> bool:
+    """Check if the donor's blood type is compatible with the recipient."""
+    donor_base = _strip_rh(donor_abo)
+    recipient_base = _strip_rh(recipient_abo)
+
+    compatible_donors = ABO_COMPATIBILITY.get(recipient_base, set())
+    return donor_base in compatible_donors
+
+
+# =============================================================================
+# 4. DISTANCE / TRAVEL TIME  —  Haversine + estimated transport speed
+# =============================================================================
+#
+# Since the CSV provides lat/lon directly, we just compute the
+# great-circle distance between donor and recipient hospitals
+# using the Haversine formula, then divide by an average transport
+# speed to estimate travel time.
+#
+# TRANSPORT_SPEED_KMH = 80 km/h is a conservative estimate for
+# helicopter organ transport (cruise speed ~250 km/h but total
+# door-to-door including prep, takeoff, landing, and ground
+# transport averages much lower).
+#
+# Adjust this constant if your transport mode differs:
+#   Fixed-wing aircraft:  ~200 km/h effective
+#   Ground ambulance:     ~60–80 km/h (varies by region/traffic)
+#   Helicopter:           ~80–120 km/h door-to-door
+# =============================================================================
+
+TRANSPORT_SPEED_KMH = 80.0
+
+
+def _haversine_km(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
+    """
+    Great-circle distance between two points on Earth.
+
+    Uses the Haversine formula:
+        a = sin²(Δlat/2) + cos(lat1)·cos(lat2)·sin²(Δlon/2)
+        c = 2·atan2(√a, √(1−a))
+        d = R·c
+
+    Returns distance in kilometers.
+    """
+    R = 6371.0  # Earth's mean radius in km
+
+    lat1, lon1, lat2, lon2 = map(radians, [lat1, lon1, lat2, lon2])
+    dlat = lat2 - lat1
+    dlon = lon2 - lon1
+
+    a = sin(dlat / 2) ** 2 + cos(lat1) * cos(lat2) * sin(dlon / 2) ** 2
+    c = 2 * atan2(sqrt(a), sqrt(1 - a))
+
+    return R * c
+
+
+def estimate_travel_time_hours(
+    donor_lat: float,
+    donor_lon: float,
+    recipient_lat: float,
+    recipient_lon: float,
+) -> float:
+    """
+    Estimate travel time in hours between donor and recipient hospitals.
+
+    Args:
+        donor_lat, donor_lon:         donor hospital coordinates.
+        recipient_lat, recipient_lon: recipient hospital coordinates.
+
+    Returns:
+        Estimated travel time in hours.
+    """
+    distance_km = _haversine_km(donor_lat, donor_lon, recipient_lat, recipient_lon)
+    return distance_km / TRANSPORT_SPEED_KMH
+
+
+# =============================================================================
+# 5. BSA SIMILARITY
+# =============================================================================
+#
+# Body Surface Area matching ensures the donor heart is appropriately
+# sized for the recipient's body.
+#
+# Hard filter: donor BSA must be >= 70% of recipient BSA
+#   (an undersized organ can't support the recipient's circulation)
+#
+# Soft score: BSA similarity for QAOA ranking (0–1)
+#   We use:  similarity = 1 - |donor_bsa - recip_bsa| / max(donor_bsa, recip_bsa)
+#   This gives 1.0 for a perfect match and decreases as the sizes diverge.
+#   An oversized organ is generally acceptable (better than undersized),
+#   so this penalizes both directions but the hard filter already
+#   removed dangerously undersized cases.
+# =============================================================================
+
+def is_bsa_compatible(donor_bsa: float, recipient_bsa: float) -> bool:
+    """
+    Hard filter: reject if donor organ is too small for the recipient.
+    Donor BSA must be at least 70% of recipient BSA.
+    """
+    return donor_bsa >= 0.70 * recipient_bsa
+
+
+def compute_bsa_similarity(donor_bsa: float, recipient_bsa: float) -> float:
+    """
+    Soft score: how close are the body sizes? Returns 0–1.
+    1.0 = identical BSA, decreasing as they diverge.
+    """
+    max_bsa = max(donor_bsa, recipient_bsa)
+    if max_bsa == 0:
+        return 0.0
+    return 1.0 - abs(donor_bsa - recipient_bsa) / max_bsa
+
+
+# =============================================================================
+# 6. FILTERING PIPELINE
+# =============================================================================
+
+def filter_and_build_recipients(
+    donor: Donor,
+    candidates: List[CsvCandidate],
+    max_travel_hours: float = 5.0,
+    verbose: bool = True,
+) -> Tuple[List[Recipient], dict]:
+    """
+    Apply all hard filters and build Recipient objects for QAOA.
+
+    Filters (in order):
+        1. ABO incompatibility
+        2. Travel time > max_travel_hours
+        3. Donor BSA < 70% of recipient BSA
+
+    Args:
+        donor: the organ donor's attributes.
+        candidates: raw CSV candidates.
+        max_travel_hours: maximum acceptable travel time.
+        verbose: print filtering details.
+
+    Returns:
+        recipients: list of Recipient objects that passed all filters.
+        filter_log: dict with counts and details of eliminated candidates.
+    """
+    filter_log = {
+        'total_candidates': len(candidates),
+        'eliminated_abo': [],
+        'eliminated_distance': [],
+        'eliminated_bsa': [],
+        'passed': [],
+    }
+
+    recipients = []
+
+    if verbose:
+        print(f"\n  FILTERING {len(candidates)} CANDIDATES")
+        print(f"  Donor: ABO={donor.abo}, Age={donor.age}, BSA={donor.bsa:.2f}")
+        print(f"  Donor location: ({donor.latitude:.4f}, {donor.longitude:.4f})")
+        print(f"  Max travel time: {max_travel_hours}h")
+        print(f"  Transport speed: {TRANSPORT_SPEED_KMH} km/h")
+        print(f"  Min donor/recipient BSA ratio: 70%")
+        print("  " + "-" * 65)
+
+    for cand in candidates:
+        # ---- Filter 1: ABO compatibility ----
+        if not is_abo_compatible(donor.abo, cand.abo):
+            filter_log['eliminated_abo'].append(cand.name)
+            if verbose:
+                print(f"    ✗ {cand.name:<20} ABO incompatible "
+                      f"(donor {donor.abo} → recipient {cand.abo})")
+            continue
+
+        # ---- Filter 2: Travel time ----
+        travel_hours = estimate_travel_time_hours(
+            donor.latitude, donor.longitude,
+            cand.latitude, cand.longitude,
+        )
+
+        if travel_hours > max_travel_hours:
+            filter_log['eliminated_distance'].append(cand.name)
+            if verbose:
+                print(f"    ✗ {cand.name:<20} Too far: {travel_hours:.1f}h "
+                      f"(max {max_travel_hours}h)")
+            continue
+
+        # ---- Filter 3: BSA compatibility ----
+        if not is_bsa_compatible(donor.bsa, cand.bsa):
+            bsa_ratio = donor.bsa / cand.bsa * 100
+            filter_log['eliminated_bsa'].append(cand.name)
+            if verbose:
+                print(f"    ✗ {cand.name:<20} Undersized organ: donor BSA "
+                      f"{donor.bsa:.2f} is {bsa_ratio:.0f}% of recipient "
+                      f"{cand.bsa:.2f} (need ≥70%)")
+            continue
+
+        # ---- Passed all filters — build Recipient ----
+        bsa_sim = compute_bsa_similarity(donor.bsa, cand.bsa)
+        is_child = cand.age < 18
+
+        recipient = Recipient(
+            name=cand.name,
+            bsa_similarity=bsa_sim,
+            urgency_level=cand.urgency,
+            waiting_time_days=cand.waiting_time_days,
+            distance_time_hours=travel_hours,
+            is_child=is_child,
+            cpra_score=cand.cpra,
+        )
+        recipients.append(recipient)
+        filter_log['passed'].append(cand.name)
+
+        if verbose:
+            child_tag = " [CHILD]" if is_child else ""
+            print(f"    ✓ {cand.name:<20} ABO={cand.abo:>3}  "
+                  f"BSA={bsa_sim:.2f}  "
+                  f"Travel={travel_hours:.1f}h  "
+                  f"Urgency={cand.urgency}  "
+                  f"CPRA={cand.cpra:.0f}%{child_tag}")
+
+    if verbose:
+        print("  " + "-" * 65)
+        print(f"  RESULT: {len(recipients)} candidates passed "
+              f"(eliminated {len(candidates) - len(recipients)})")
+        print(f"    ABO incompatible:   {len(filter_log['eliminated_abo'])}")
+        print(f"    Too far:            {len(filter_log['eliminated_distance'])}")
+        print(f"    BSA undersized:     {len(filter_log['eliminated_bsa'])}")
+
+    return recipients, filter_log
+
+
+# =============================================================================
+# 7. SCORE NORMALIZATION  (updated for new Recipient fields)
 # =============================================================================
 
 def normalize_scores(recipients: List[Recipient]) -> np.ndarray:
-    """Normalize all 6 factors to [0,1]. Returns (n, 6) array."""
+    """
+    Normalize all 6 factors to [0,1]. Returns (n, 6) array.
+
+    Columns:
+        0: bsa_similarity     — already [0,1], pass through
+        1: urgency            — 1→1.0 (most urgent), 6→0.0 (INVERTED)
+        2: waiting_time       — min-max normalized (longer = higher)
+        3: distance_time      — INVERTED (closer = higher)
+        4: pediatric          — binary 0/1
+        5: cpra               — scale to [0,1] (higher = more priority)
+    """
     n = len(recipients)
     scores = np.zeros((n, 6))
 
-    compatibilities = np.array([r.compatibility_score for r in recipients])
-    urgencies       = np.array([r.urgency_level for r in recipients], dtype=float)
-    wait_times      = np.array([r.waiting_time_days for r in recipients], dtype=float)
-    distances       = np.array([r.distance_km for r in recipients], dtype=float)
-    pediatrics      = np.array([1.0 if r.is_child else 0.0 for r in recipients])
-    cpras           = np.array([r.cpra_score for r in recipients])
+    bsa_sims   = np.array([r.bsa_similarity for r in recipients])
+    urgencies  = np.array([r.urgency_level for r in recipients], dtype=float)
+    wait_times = np.array([r.waiting_time_days for r in recipients], dtype=float)
+    distances  = np.array([r.distance_time_hours for r in recipients], dtype=float)
+    pediatrics = np.array([1.0 if r.is_child else 0.0 for r in recipients])
+    cpras      = np.array([r.cpra_score for r in recipients])
 
-    scores[:, 0] = compatibilities
+    # Col 0: BSA similarity — already [0,1]
+    scores[:, 0] = bsa_sims
+
+    # Col 1: Urgency — INVERTED (1=most urgent→1.0, 6=least→0.0)
     scores[:, 1] = (6.0 - urgencies) / 5.0
 
+    # Col 2: Waiting time — min-max (longer wait = higher priority)
     wt_min, wt_max = wait_times.min(), wait_times.max()
     scores[:, 2] = (wait_times - wt_min) / (wt_max - wt_min) if wt_max > wt_min else 0.5
 
+    # Col 3: Distance time — INVERTED (closer = better for organ viability)
     d_min, d_max = distances.min(), distances.max()
     scores[:, 3] = 1.0 - (distances - d_min) / (d_max - d_min) if d_max > d_min else 0.5
 
+    # Col 4: Pediatric bonus — binary
     scores[:, 4] = pediatrics
+
+    # Col 5: CPRA — scale 0–100 → 0–1 (higher = harder to match = more priority)
     scores[:, 5] = cpras / 100.0
+
     return scores
 
 
@@ -114,7 +452,7 @@ def compute_composite_scores(
     """Weighted sum of normalized factors → one scalar per candidate."""
     scores = normalize_scores(recipients)
     w = np.array([
-        weights.compatibility, weights.urgency, weights.waiting_time,
+        weights.bsa_similarity, weights.urgency, weights.waiting_time,
         weights.distance, weights.pediatric, weights.cpra,
     ])
     w /= w.sum()
@@ -122,201 +460,14 @@ def compute_composite_scores(
 
 
 # =============================================================================
-# 3. COST HAMILTONIAN ENCODING
-# =============================================================================
-#
-# The cost Hamiltonian for "select exactly one of n items" is:
-#
-#   C = Σ_i  c_i · Z̃_i  −  λ · (Σ_i Z̃_i − 1)²
-#
-# where Z̃_i = (I − Z_i)/2  maps |0⟩→0, |1⟩→1  (occupation number).
-#
-# Expanding the penalty:
-#   (Σ Z̃_i − 1)² = (Σ Z̃_i)² − 2(Σ Z̃_i) + 1
-#                  = Σ_i Z̃_i² + Σ_{i≠j} Z̃_i Z̃_j − 2 Σ_i Z̃_i + 1
-#                  = Σ_i Z̃_i(1 − 2) + Σ_{i≠j} Z̃_i Z̃_j + 1   [since Z̃² = Z̃]
-#                  = −Σ_i Z̃_i + Σ_{i≠j} Z̃_i Z̃_j + 1
-#
-# So C becomes:
-#   C = Σ_i (c_i + λ) Z̃_i  −  λ Σ_{i<j} Z̃_i Z̃_j  −  λ
-#
-# In terms of Pauli Z (where Z̃ = (I−Z)/2):
-#   Z̃_i Z̃_j = (I − Z_i − Z_j + Z_i Z_j) / 4
-#   Z̃_i      = (I − Z_i) / 2
-#
-# This gives us the gate decomposition:
-#   • Single-qubit Z rotations (RZ gates) for linear terms
-#   • Two-qubit ZZ interactions (RZZ gates) for quadratic terms
-#   • A global phase (ignorable)
-#
-# =============================================================================
-
-def _compute_hamiltonian_coefficients(
-    composite_scores: np.ndarray,
-    penalty_strength: float,
-) -> Tuple[np.ndarray, np.ndarray, float]:
-    """
-    Decompose the cost Hamiltonian into Pauli Z / ZZ coefficients.
-
-    Returns:
-        h_linear:   shape (n,)      — coefficient of Z_i for each qubit
-        h_quadratic: shape (n, n)   — coefficient of Z_i Z_j (upper triangle)
-        h_offset:   float           — constant energy offset (ignorable)
-
-    The cost unitary e^{-iγC} is then:
-        Π_i       RZ(2γ · h_linear[i])  on qubit i
-        Π_{i<j}   RZZ(2γ · h_quadratic[i,j])  on qubits i,j
-        × global phase e^{-iγ · h_offset}
-    """
-    n = len(composite_scores)
-    lam = penalty_strength
-
-    # ---- Linear coefficients (in Z_i basis) ----
-    # From  (c_i + λ) · Z̃_i  =  (c_i + λ) · (I - Z_i) / 2
-    # The Z_i coefficient is  -(c_i + λ) / 2
-    # The I coefficient is     (c_i + λ) / 2  (absorbed into offset)
-    h_linear = np.zeros(n)
-    offset = 0.0
-
-    for i in range(n):
-        coeff = composite_scores[i] + lam
-        h_linear[i] = -coeff / 2.0
-        offset += coeff / 2.0
-
-    # ---- Quadratic coefficients (in Z_i Z_j basis) ----
-    # From  -λ · Z̃_i Z̃_j  =  -λ · (I - Z_i - Z_j + Z_i Z_j) / 4
-    # Z_i Z_j coefficient:  -λ / 4
-    # Z_i coefficient:       +λ / 4   (added to linear)
-    # Z_j coefficient:       +λ / 4   (added to linear)
-    # I coefficient:         -λ / 4   (added to offset)
-    h_quadratic = np.zeros((n, n))
-
-    for i in range(n):
-        for j in range(i + 1, n):
-            h_quadratic[i, j] = -lam / 4.0
-            h_linear[i] += lam / 4.0
-            h_linear[j] += lam / 4.0
-            offset -= lam / 4.0
-
-    # ---- Global offset from the -λ constant in C ----
-    offset -= lam
-
-    return h_linear, h_quadratic, offset
-
-
-# =============================================================================
-# 4. QISKIT CIRCUIT CONSTRUCTION
-# =============================================================================
-
-def build_qaoa_circuit(
-    n: int,
-    p: int,
-    h_linear: np.ndarray,
-    h_quadratic: np.ndarray,
-) -> Tuple[QuantumCircuit, ParameterVector, ParameterVector]:
-    """
-    Build a parameterized QAOA circuit using Qiskit gates.
-
-    Architecture:
-        |0⟩^n → H^⊗n → [Cost Layer → Mixer Layer] × p → Measure
-
-    Cost layer (for parameter γ_l):
-        • RZ(2γ · h_linear[i])  on each qubit i         — single-qubit phase
-        • RZZ(2γ · h_quadratic[i,j])  on each pair i<j  — entangling interaction
-
-    Mixer layer (for parameter β_l):
-        • RX(2β)  on each qubit                          — transverse field
-
-    Total gate count per layer:
-        • n single-qubit RZ gates
-        • n(n-1)/2 two-qubit RZZ gates  (decomposed into 2 CX + 1 RZ each)
-        • n single-qubit RX gates
-
-    Args:
-        n: number of qubits (= number of candidates).
-        p: QAOA depth (number of layers).
-        h_linear: Z coefficients from Hamiltonian decomposition.
-        h_quadratic: ZZ coefficients (upper triangle).
-
-    Returns:
-        qc: the parameterized QuantumCircuit.
-        gammas: ParameterVector of length p.
-        betas: ParameterVector of length p.
-    """
-    # ---- Create parameter vectors ----
-    # These are symbolic — Qiskit compiles the circuit once, then
-    # we bind concrete values during each optimizer iteration.
-    gammas = ParameterVector('γ', p)
-    betas  = ParameterVector('β', p)
-
-    qc = QuantumCircuit(n, n)  # n qubits, n classical bits
-
-    # ---- Initial state: |+⟩^⊗n ----
-    qc.h(range(n))
-    qc.barrier()  # visual separator in circuit diagrams
-
-    for l in range(p):
-        # ======== COST LAYER (e^{-iγC}) ========
-        #
-        # For a diagonal Hamiltonian in the Z basis, the cost unitary
-        # decomposes into single-qubit RZ and two-qubit RZZ gates.
-        #
-        # RZ(θ) = e^{-iθZ/2}   so for coefficient h, we need θ = 2γ·h
-        # RZZ(θ) = e^{-iθ Z⊗Z /2}  same convention
-
-        # Single-qubit Z rotations
-        for i in range(n):
-            if abs(h_linear[i]) > 1e-10:  # skip negligible terms
-                qc.rz(2 * gammas[l] * h_linear[i], i)
-
-        # Two-qubit ZZ interactions
-        # RZZ is not a native gate on most hardware, so we decompose:
-        #   RZZ(θ) = CX(i,j) · RZ(θ, j) · CX(i,j)
-        # This is exact and uses only 2 CX gates.
-        for i in range(n):
-            for j in range(i + 1, n):
-                if abs(h_quadratic[i, j]) > 1e-10:
-                    theta = 2 * gammas[l] * h_quadratic[i, j]
-                    qc.cx(i, j)
-                    qc.rz(theta, j)
-                    qc.cx(i, j)
-
-        qc.barrier()
-
-        # ======== MIXER LAYER (e^{-iβB}) ========
-        #
-        # B = Σ_i X_i  →  e^{-iβB} = Π_i e^{-iβX_i} = Π_i RX(2β)
-        #
-        # This is the standard transverse-field mixer.  On hardware,
-        # RX is typically a native gate, so no further decomposition needed.
-        for i in range(n):
-            qc.rx(2 * betas[l], i)
-
-        qc.barrier()
-
-    # ---- Measurement ----
-    qc.measure(range(n), range(n))
-
-    return qc, gammas, betas
-
-
-# =============================================================================
-# 5. CVaR OBJECTIVE  (same math, applied to Qiskit measurement counts)
+# 8. QAOA ENGINE  (shot-based, from-scratch — swap for Qiskit version if desired)
 # =============================================================================
 
 def _bitstring_to_indices(z: int, n: int) -> List[int]:
-    """Return which qubits are |1⟩ in the n-bit integer z."""
     return [i for i in range(n) if (z >> i) & 1]
 
 
-def _build_cost_diagonal(
-    composite_scores: np.ndarray,
-    penalty_strength: float,
-) -> np.ndarray:
-    """
-    Build the full diagonal cost vector for post-processing shot results.
-    C(z) = Σ_i c_i·z_i − λ·(Σ_i z_i − 1)²
-    """
+def _build_cost_diagonal(composite_scores, penalty_strength):
     n = len(composite_scores)
     dim = 2 ** n
     cost = np.zeros(dim)
@@ -329,231 +480,95 @@ def _build_cost_diagonal(
     return cost
 
 
-def _cvar_from_counts(
-    counts: dict,
-    cost_diagonal: np.ndarray,
-    n: int,
-    alpha: float = 0.25,
-) -> float:
-    """
-    Compute CVaR_α from Qiskit measurement counts.
+def _evolve_qaoa_state(cost_diagonal, gammas, betas, n):
+    dim = 2 ** n
+    p = len(gammas)
+    state = np.ones(dim, dtype=complex) / np.sqrt(dim)
 
-    Args:
-        counts: dict from Qiskit result, e.g. {"01001": 137, "00010": 245, ...}
-                Qiskit uses BIG-ENDIAN bit ordering: leftmost bit = highest qubit.
-        cost_diagonal: precomputed cost for each basis state.
-        n: number of qubits.
-        alpha: CVaR fraction.
+    for l in range(p):
+        state = np.exp(-1j * gammas[l] * cost_diagonal) * state
+        cos_b = np.cos(betas[l])
+        sin_b = np.sin(betas[l])
+        for i in range(n):
+            new_state = np.zeros_like(state)
+            for z in range(dim):
+                z_flipped = z ^ (1 << i)
+                new_state[z] += cos_b * state[z] - 1j * sin_b * state[z_flipped]
+            state = new_state
 
-    Returns:
-        cvar: mean of top α-fraction of shot costs.
-    """
-    # Expand counts into a list of (cost, count) pairs
-    cost_count_pairs = []
-    for bitstring, count in counts.items():
-        # Qiskit bitstrings are big-endian: bit 0 is rightmost.
-        # Convert to integer matching our little-endian convention.
-        z = int(bitstring, 2)
-        # Reverse bit order: Qiskit's q[0] is the rightmost character
-        # but our cost_diagonal indexes q[0] as bit 0 (LSB), which
-        # matches int(bitstring, 2) with reversed string.
-        z_le = int(bitstring[::-1], 2)
-        cost_count_pairs.append((cost_diagonal[z_le], count))
-
-    # Sort by cost DESCENDING (best first)
-    cost_count_pairs.sort(key=lambda x: x[0], reverse=True)
-
-    # Compute total shots
-    total_shots = sum(c for _, c in cost_count_pairs)
-    k = max(1, int(np.ceil(alpha * total_shots)))
-
-    # Accumulate the top-k shots
-    accumulated = 0
-    weighted_sum = 0.0
-    for cost_val, count in cost_count_pairs:
-        take = min(count, k - accumulated)
-        weighted_sum += cost_val * take
-        accumulated += take
-        if accumulated >= k:
-            break
-
-    return weighted_sum / accumulated if accumulated > 0 else 0.0
+    return state
 
 
-# =============================================================================
-# 6. QAOA OPTIMIZER  —  Qiskit AerSimulator
-# =============================================================================
+def _sample_shots(state, n_shots):
+    probs = np.abs(state) ** 2
+    probs = np.maximum(probs, 0.0)
+    probs /= probs.sum()
+    return np.random.choice(len(probs), size=n_shots, p=probs)
 
-def qaoa_optimize_qiskit(
-    composite_scores: np.ndarray,
-    p: int = 3,
-    penalty_strength: float = 10.0,
-    n_shots: int = 4096,
-    n_shots_final: int = 16384,
-    cvar_alpha: float = 0.25,
-    n_restarts: int = 20,
-) -> Tuple[int, float, dict]:
-    """
-    Run QAOA on Qiskit's AerSimulator with shot-based measurement.
 
-    Workflow:
-        1. Decompose cost Hamiltonian into Pauli Z/ZZ coefficients.
-        2. Build a parameterized QuantumCircuit (compiled once).
-        3. Classical optimization loop:
-             a. Bind (γ, β) values into the circuit.
-             b. Execute on AerSimulator with n_shots.
-             c. Parse measurement counts → CVaR objective.
-             d. COBYLA adjusts parameters.
-        4. Final measurement round with n_shots_final.
-        5. Majority vote among valid bitstrings → winner.
+def _cvar_objective(costs, alpha=0.25):
+    sorted_costs = np.sort(costs)[::-1]
+    k = max(1, int(np.ceil(alpha * len(sorted_costs))))
+    return sorted_costs[:k].mean()
 
-    Args:
-        composite_scores: per-candidate weighted scores.
-        p: QAOA circuit depth.
-        penalty_strength: constraint penalty λ.
-        n_shots: shots per optimizer evaluation.
-        n_shots_final: shots for the final decision round.
-        cvar_alpha: CVaR top-fraction parameter.
-        n_restarts: classical optimizer restarts.
 
-    Returns:
-        best_candidate, best_score, info_dict
-    """
+def qaoa_optimize_shots(
+    composite_scores, p=3, penalty_strength=10.0,
+    n_shots=4096, n_shots_final=16384, cvar_alpha=0.25, n_restarts=20,
+):
     n = len(composite_scores)
-
-    # ---- 6a. Hamiltonian decomposition ----
-    h_linear, h_quadratic, h_offset = _compute_hamiltonian_coefficients(
-        composite_scores, penalty_strength
-    )
-
-    # ---- 6b. Build parameterized circuit (compiled ONCE) ----
-    qc, gamma_params, beta_params = build_qaoa_circuit(n, p, h_linear, h_quadratic)
-
-    print(f"  [QISKIT] Circuit: {qc.num_qubits} qubits, depth {qc.depth()}, "
-          f"{qc.count_ops()} gates")
-    print(f"  [QISKIT] Parameters: {qc.num_parameters} "
-          f"({p} γ + {p} β)")
-
-    # ---- 6c. Initialize AerSimulator ----
-    #
-    # AerSimulator is Qiskit Aer's high-performance C++ simulator.
-    # method='automatic' lets it choose the best algorithm:
-    #   • statevector for small circuits
-    #   • matrix_product_state for deep/wide circuits
-    #   • stabilizer for Clifford-only circuits
-    #
-    # To add a noise model (simulating real hardware errors):
-    #   from qiskit_aer.noise import NoiseModel
-    #   noise = NoiseModel.from_backend(real_backend)
-    #   simulator = AerSimulator(noise_model=noise)
-    simulator = AerSimulator(method='automatic')
-
-    # ---- 6d. Precompute cost diagonal for post-processing ----
+    dim = 2 ** n
     cost_diagonal = _build_cost_diagonal(composite_scores, penalty_strength)
-
-    # ---- 6e. Evaluation counter ----
     eval_count = [0]
 
-    # ---- 6f. Shot-based objective function ----
-    def qiskit_objective(params):
-        """
-        Bind parameters → run on AerSimulator → parse counts → CVaR.
-
-        This is the inner loop of the variational algorithm.
-        On real hardware, this function would submit a job to the QPU.
-        """
-        gamma_vals = params[:p]
-        beta_vals  = params[p:]
-
-        # Build the parameter binding dictionary
-        # Maps each Qiskit Parameter object to a concrete float value
-        param_dict = {}
-        for l in range(p):
-            param_dict[gamma_params[l]] = gamma_vals[l]
-            param_dict[beta_params[l]]  = beta_vals[l]
-
-        # Bind parameters into the circuit (returns a new circuit, no recompile)
-        bound_qc = qc.assign_parameters(param_dict)
-
-        # Execute on AerSimulator
-        # .run() returns a Job; .result() blocks until complete;
-        # .get_counts() returns {"bitstring": count} dict.
-        job = simulator.run(bound_qc, shots=n_shots)
-        result = job.result()
-        counts = result.get_counts()
-
-        # Compute CVaR from the measurement counts
-        cvar = _cvar_from_counts(counts, cost_diagonal, n, cvar_alpha)
-
+    def shot_objective(params):
+        gammas, betas = params[:p], params[p:]
+        state = _evolve_qaoa_state(cost_diagonal, gammas, betas, n)
+        samples = _sample_shots(state, n_shots)
+        costs = cost_diagonal[samples]
         eval_count[0] += 1
-        return -cvar  # negate for minimization
-
-    # ---- 6g. Classical optimization with random restarts ----
-    #
-    # COBYLA is gradient-free and handles the stochastic (shot-noisy)
-    # landscape well.  For production use, consider:
-    #   • SPSA: designed for noisy function evaluations
-    #   • NFT (Nakanishi-Fujii-Todo): parameter-shift-like, good for QAOA
-    #   • Bayesian optimization for expensive evaluations
+        return -_cvar_objective(costs, cvar_alpha)
 
     best_params = None
     best_value = float('inf')
 
-    print(f"  [QISKIT] Starting optimization: p={p}, shots={n_shots}, "
-          f"CVaR α={cvar_alpha}, restarts={n_restarts}")
+    print(f"\n  [QAOA] p={p}, shots={n_shots}, CVaR α={cvar_alpha}, restarts={n_restarts}")
 
     for restart in range(n_restarts):
-        init_params = np.random.uniform(0, 2 * np.pi, size=2 * p)
-
         result = minimize(
-            qiskit_objective,
-            init_params,
+            shot_objective,
+            np.random.uniform(0, 2 * np.pi, size=2 * p),
             method='COBYLA',
             options={'maxiter': 500, 'rhobeg': 0.5},
         )
-
         if result.fun < best_value:
             best_value = result.fun
             best_params = result.x
 
-    print(f"  [QISKIT] Optimization complete. {eval_count[0]} circuit executions.")
+    print(f"  [QAOA] Done. {eval_count[0]} evaluations.")
 
-    # ---- 6h. FINAL MEASUREMENT ROUND ----
-    gamma_vals = best_params[:p]
-    beta_vals  = best_params[p:]
+    # Final measurement
+    gammas_opt, betas_opt = best_params[:p], best_params[p:]
+    final_state = _evolve_qaoa_state(cost_diagonal, gammas_opt, betas_opt, n)
+    final_samples = _sample_shots(final_state, n_shots_final)
 
-    param_dict = {}
-    for l in range(p):
-        param_dict[gamma_params[l]] = gamma_vals[l]
-        param_dict[beta_params[l]]  = beta_vals[l]
+    raw_counts = Counter(int(s) for s in final_samples)
 
-    bound_qc = qc.assign_parameters(param_dict)
-
-    print(f"  [QISKIT] Final measurement: {n_shots_final:,} shots on AerSimulator...")
-    job = simulator.run(bound_qc, shots=n_shots_final)
-    final_result = job.result()
-    final_counts = final_result.get_counts()
-
-    # ---- 6i. Parse measurement histogram ----
     valid_counts: Dict[int, int] = {}
     invalid_count = 0
     invalid_breakdown: Dict[int, int] = {}
 
-    for bitstring, count in final_counts.items():
-        # Convert Qiskit big-endian bitstring to our candidate indices
-        z = int(bitstring[::-1], 2)  # reverse for little-endian
+    for z, count in raw_counts.items():
         selected = _bitstring_to_indices(z, n)
         k = len(selected)
         if k == 1:
-            cand = selected[0]
-            valid_counts[cand] = valid_counts.get(cand, 0) + count
+            valid_counts[selected[0]] = valid_counts.get(selected[0], 0) + count
         else:
             invalid_count += count
             invalid_breakdown[k] = invalid_breakdown.get(k, 0) + count
 
     total_valid = sum(valid_counts.values())
 
-    # ---- 6j. Majority vote winner ----
     if valid_counts:
         ranked = sorted(valid_counts.items(), key=lambda x: x[1], reverse=True)
         best_candidate = ranked[0][0]
@@ -561,80 +576,43 @@ def qaoa_optimize_qiskit(
     else:
         best_candidate = int(np.argmax(composite_scores))
         best_votes = 0
-        print("  [QISKIT] WARNING: No valid measurements! Falling back to classical.")
 
-    # ---- 6k. Statistical analysis ----
-    winner_fraction = best_votes / n_shots_final if n_shots_final > 0 else 0
-    valid_fraction = total_valid / n_shots_final if n_shots_final > 0 else 0
-    se = np.sqrt(winner_fraction * (1 - winner_fraction) / n_shots_final) \
-        if n_shots_final > 0 else 0
-    ci_low = max(0, winner_fraction - 1.96 * se)
-    ci_high = min(1, winner_fraction + 1.96 * se)
+    winner_fraction = best_votes / n_shots_final
+    valid_fraction = total_valid / n_shots_final
+    se = np.sqrt(winner_fraction * (1 - winner_fraction) / n_shots_final)
 
-    if len(ranked) >= 2:
-        runner_up_idx = ranked[1][0]
-        runner_up_votes = ranked[1][1]
-        margin = (best_votes - runner_up_votes) / n_shots_final
-    else:
-        runner_up_idx = None
-        runner_up_votes = 0
-        margin = winner_fraction
+    runner_up_idx = ranked[1][0] if len(ranked) >= 2 else None
+    runner_up_votes = ranked[1][1] if len(ranked) >= 2 else 0
+    margin = (best_votes - runner_up_votes) / n_shots_final
 
-    # ---- 6l. Cost distribution from final shots ----
-    final_costs = []
-    for bitstring, count in final_counts.items():
-        z = int(bitstring[::-1], 2)
-        final_costs.extend([cost_diagonal[z]] * count)
-    final_costs = np.array(final_costs)
+    final_costs = cost_diagonal[final_samples]
 
-    final_cvar = _cvar_from_counts(final_counts, cost_diagonal, n, cvar_alpha)
-
-    # ---- 6m. Package diagnostics ----
     info = {
         'optimal_params': best_params,
-        'gammas': gamma_vals,
-        'betas': beta_vals,
         'qaoa_depth': p,
         'n_candidates': n,
-        'n_shots_optimization': n_shots,
         'n_shots_final': n_shots_final,
         'cvar_alpha': cvar_alpha,
         'penalty_strength': penalty_strength,
         'total_circuit_evaluations': eval_count[0],
-
-        # Qiskit-specific metadata
-        'circuit_depth': qc.depth(),
-        'gate_counts': dict(qc.count_ops()),
-        'simulator_method': simulator._options.get('method', 'automatic'),
-
-        # Raw Qiskit counts (for external analysis)
-        'raw_qiskit_counts': dict(final_counts),
-
-        # Parsed measurement results
         'valid_vote_counts': valid_counts,
         'invalid_shot_count': invalid_count,
         'invalid_breakdown': invalid_breakdown,
         'total_valid_shots': total_valid,
         'total_invalid_shots': invalid_count,
         'valid_fraction': valid_fraction,
-
-        # Winner statistics
         'winner_votes': best_votes,
         'winner_fraction': winner_fraction,
         'winner_std_error': se,
-        'winner_95ci': (ci_low, ci_high),
+        'winner_95ci': (max(0, winner_fraction - 1.96*se), min(1, winner_fraction + 1.96*se)),
         'runner_up_index': runner_up_idx,
         'runner_up_votes': runner_up_votes,
         'win_margin': margin,
-
-        # Cost function statistics
         'cost_mean': final_costs.mean(),
         'cost_std': final_costs.std(),
         'cost_max': final_costs.max(),
         'cost_min': final_costs.min(),
-        'final_cvar': final_cvar,
-
-        # Per-candidate probabilities
+        'final_cvar': _cvar_objective(final_costs, cvar_alpha),
         'all_valid_probabilities': {
             idx: cnt / total_valid if total_valid > 0 else 0
             for idx, cnt in valid_counts.items()
@@ -645,27 +623,70 @@ def qaoa_optimize_qiskit(
 
 
 # =============================================================================
-# 7. FULL MATCHING PIPELINE
+# 9. FULL PIPELINE
 # =============================================================================
 
-def match_heart_to_recipient(
-    recipients: List[Recipient],
+def match_heart_from_csv(
+    donor: Donor,
+    csv_filepath: str,
     weights: MatchingWeights = None,
-    qaoa_depth: int = 3,
+    max_travel_hours: float = 5.0,
+    qaoa_depth: int = 5,
     penalty_strength: float = 10.0,
     n_shots: int = 4096,
     n_shots_final: int = 16384,
     cvar_alpha: float = 0.25,
-    n_restarts: int = 20,
+    n_restarts: int = 30,
 ) -> dict:
-    """End-to-end Qiskit QAOA heart matching pipeline."""
+    """
+    Complete pipeline: CSV → filter → QAOA → winner.
+
+    Args:
+        donor: the organ donor.
+        csv_filepath: path to the recipient CSV.
+        weights: policy weighting (defaults if None).
+        max_travel_hours: hard cutoff for travel time.
+        qaoa_depth: QAOA circuit depth p.
+        penalty_strength: constraint penalty λ.
+        n_shots: shots per optimization evaluation.
+        n_shots_final: shots for the final round.
+        cvar_alpha: CVaR fraction.
+        n_restarts: optimizer restarts.
+
+    Returns:
+        dict with selected recipient, scores, filter log, QAOA info.
+    """
     if weights is None:
         weights = MatchingWeights()
 
+    # Step 1: Read CSV
+    candidates = read_candidates_csv(csv_filepath)
+
+    # Step 2: Filter and build Recipients
+    recipients, filter_log = filter_and_build_recipients(
+        donor, candidates, max_travel_hours,
+    )
+
+    if len(recipients) == 0:
+        print("\n  ✗ NO COMPATIBLE RECIPIENTS after filtering.")
+        return {'selected_recipient': None, 'filter_log': filter_log}
+
+    if len(recipients) == 1:
+        print(f"\n  Only one compatible recipient: {recipients[0].name}")
+        return {
+            'selected_recipient': recipients[0],
+            'selected_index': 0,
+            'composite_scores': compute_composite_scores(recipients, weights),
+            'filter_log': filter_log,
+            'qaoa_info': None,
+        }
+
+    # Step 3: Compute composite scores
     composite = compute_composite_scores(recipients, weights)
     classical_best = int(np.argmax(composite))
 
-    best_idx, best_score, info = qaoa_optimize_qiskit(
+    # Step 4: Run QAOA
+    best_idx, best_score, info = qaoa_optimize_shots(
         composite,
         p=qaoa_depth,
         penalty_strength=penalty_strength,
@@ -678,143 +699,135 @@ def match_heart_to_recipient(
     return {
         'selected_recipient': recipients[best_idx],
         'selected_index': best_idx,
+        'all_recipients': recipients,
         'composite_scores': composite,
         'normalized_factors': normalize_scores(recipients),
         'qaoa_info': info,
+        'filter_log': filter_log,
         'classical_best_index': classical_best,
         'qaoa_matches_classical': best_idx == classical_best,
     }
 
 
 # =============================================================================
-# 8. REPORTING
+# 10. REPORTING
 # =============================================================================
 
-def print_report(result: dict, recipients: List[Recipient], weights: MatchingWeights):
-    """Pretty-print matching results with Qiskit circuit and shot details."""
+def print_report(result: dict, weights: MatchingWeights):
+    """Pretty-print the full pipeline results."""
+    if result.get('selected_recipient') is None:
+        print("\n  No recipient selected — all candidates were filtered out.")
+        return
+
     factor_names = [
-        "Compatibility", "Urgency", "Waiting Time",
+        "BSA Match", "Urgency", "Waiting Time",
         "Distance (inv)", "Pediatric", "CPRA"
     ]
     w_arr = np.array([
-        weights.compatibility, weights.urgency, weights.waiting_time,
+        weights.bsa_similarity, weights.urgency, weights.waiting_time,
         weights.distance, weights.pediatric, weights.cpra,
     ])
     w_arr /= w_arr.sum()
-    info = result['qaoa_info']
+    info = result.get('qaoa_info')
+    recipients = result['all_recipients']
 
-    print("=" * 80)
-    print("  QAOA HEART-ORGAN MATCHING  —  Qiskit AerSimulator Backend")
-    print("=" * 80)
+    print("\n" + "=" * 85)
+    print("  QAOA HEART-ORGAN MATCHING  —  Full Pipeline Results")
+    print("=" * 85)
 
     print("\n  POLICY WEIGHTS:")
     for name, w in zip(factor_names, w_arr):
         print(f"    {name:<20s}: {w:.3f}")
 
-    print(f"\n  QISKIT CIRCUIT INFO:")
-    print(f"    Qubits:                     {info['n_candidates']}")
-    print(f"    Circuit depth:              {info['circuit_depth']}")
-    print(f"    Gate counts:                {info['gate_counts']}")
-    print(f"    QAOA layers (p):            {info['qaoa_depth']}")
-    print(f"    Simulator method:           {info['simulator_method']}")
-
-    print(f"\n  OPTIMIZATION CONFIG:")
-    print(f"    Shots per evaluation:       {info['n_shots_optimization']:,}")
-    print(f"    Final measurement shots:    {info['n_shots_final']:,}")
-    print(f"    CVaR α:                     {info['cvar_alpha']}")
-    print(f"    Penalty strength (λ):       {info['penalty_strength']}")
-    print(f"    Total circuit executions:   {info['total_circuit_evaluations']:,}")
-
     norm = result['normalized_factors']
     comp = result['composite_scores']
-    votes = info['valid_vote_counts']
-    total_valid = info['total_valid_shots']
+    votes = info['valid_vote_counts'] if info else {}
+    total_valid = info['total_valid_shots'] if info else 0
 
-    print(f"\n  CANDIDATE SCORES & MEASUREMENT RESULTS:")
-    print(f"  {'#':<4} {'Name':<18} ", end="")
+    print(f"\n  SURVIVING CANDIDATES ({len(recipients)}):")
+    print(f"  {'#':<4} {'Name':<20} ", end="")
     for fn in factor_names:
         print(f"{fn[:6]:>7}", end="")
     print(f"  {'Score':>7}  {'Votes':>7}  {'Prob':>7}")
-    print("  " + "-" * 105)
+    print("  " + "-" * 110)
 
     for i, r in enumerate(recipients):
         marker = " ★" if i == result['selected_index'] else "  "
         v = votes.get(i, 0)
         prob = v / total_valid if total_valid > 0 else 0
-        print(f"  {i:<4} {r.name:<18} ", end="")
+        print(f"  {i:<4} {r.name:<20} ", end="")
         for j in range(6):
             print(f"{norm[i, j]:>7.3f}", end="")
         print(f"  {comp[i]:>7.4f}  {v:>7,}  {prob:>7.4f}{marker}")
 
-    print(f"\n  MEASUREMENT STATISTICS:")
-    print(f"    Valid shots:      {info['total_valid_shots']:>8,} / {info['n_shots_final']:,}  "
-          f"({info['valid_fraction']:.1%})")
-    print(f"    Invalid shots:    {info['total_invalid_shots']:>8,}  ", end="")
-    if info['invalid_breakdown']:
-        parts = [f"{k}-selected: {v}" for k, v in sorted(info['invalid_breakdown'].items())]
-        print(f"({', '.join(parts)})")
-    else:
-        print("(none)")
+    if info:
+        print(f"\n  MEASUREMENT STATISTICS:")
+        print(f"    Valid shots:      {info['total_valid_shots']:>8,} / "
+              f"{info['n_shots_final']:,}  ({info['valid_fraction']:.1%})")
+        print(f"    Invalid shots:    {info['total_invalid_shots']:>8,}")
 
-    ci = info['winner_95ci']
-    print(f"\n  WINNER ANALYSIS:")
-    print(f"    ★ Selected:       {result['selected_recipient'].name}")
-    print(f"    Composite score:  {comp[result['selected_index']]:.4f}")
-    print(f"    Votes:            {info['winner_votes']:,} / {info['total_valid_shots']:,} valid")
-    print(f"    Win probability:  {info['winner_fraction']:.4f}  "
-          f"± {info['winner_std_error']:.4f}  "
-          f"(95% CI: [{ci[0]:.4f}, {ci[1]:.4f}])")
-    print(f"    Win margin:       {info['win_margin']:.4f}  "
-          f"(over {recipients[info['runner_up_index']].name if info['runner_up_index'] is not None else 'N/A'})")
+        ci = info['winner_95ci']
+        print(f"\n  WINNER ANALYSIS:")
+        print(f"    ★ Selected:       {result['selected_recipient'].name}")
+        print(f"    Composite score:  {comp[result['selected_index']]:.4f}")
+        print(f"    Votes:            {info['winner_votes']:,} / "
+              f"{info['total_valid_shots']:,} valid")
+        print(f"    Win probability:  {info['winner_fraction']:.4f}  "
+              f"± {info['winner_std_error']:.4f}  "
+              f"(95% CI: [{ci[0]:.4f}, {ci[1]:.4f}])")
 
-    print(f"\n  COST FUNCTION DISTRIBUTION (final shots):")
-    print(f"    Mean:      {info['cost_mean']:>8.4f}")
-    print(f"    Std Dev:   {info['cost_std']:>8.4f}")
-    print(f"    Min:       {info['cost_min']:>8.4f}")
-    print(f"    Max:       {info['cost_max']:>8.4f}")
-    print(f"    CVaR₀.₂₅:  {info['final_cvar']:>8.4f}")
+        print(f"\n  SHOT HISTOGRAM:")
+        max_votes = max(votes.values()) if votes else 1
+        bar_width = 40
+        for i in range(len(recipients)):
+            v = votes.get(i, 0)
+            bar_len = int(bar_width * v / max_votes) if max_votes > 0 else 0
+            bar = "█" * bar_len + "░" * (bar_width - bar_len)
+            marker = " ★" if i == result['selected_index'] else "  "
+            print(f"    {recipients[i].name:<20} |{bar}| {v:>6,}{marker}")
 
-    print(f"\n  SHOT HISTOGRAM (valid measurements):")
-    max_votes = max(votes.values()) if votes else 1
-    bar_width = 40
-    for i in range(len(recipients)):
-        v = votes.get(i, 0)
-        bar_len = int(bar_width * v / max_votes) if max_votes > 0 else 0
-        bar = "█" * bar_len + "░" * (bar_width - bar_len)
-        marker = " ★" if i == result['selected_index'] else "  "
-        print(f"    {recipients[i].name:<18} |{bar}| {v:>6,}{marker}")
+        print(f"\n  CLASSICAL VERIFICATION:")
+        print(f"    Classical optimum:  #{result['classical_best_index']} "
+              f"({recipients[result['classical_best_index']].name})")
+        print(f"    QAOA agrees:       "
+              f"{'✓ YES' if result['qaoa_matches_classical'] else '✗ NO'}")
 
-    print(f"\n  CLASSICAL VERIFICATION:")
-    print(f"    Classical optimum:  #{result['classical_best_index']} "
-          f"({recipients[result['classical_best_index']].name})")
-    print(f"    QAOA agrees:       {'✓ YES' if result['qaoa_matches_classical'] else '✗ NO'}")
-    print("=" * 80)
+    print("=" * 85)
 
 
 # =============================================================================
-# 9. DEMO
+# 11. DEMO
 # =============================================================================
 
 def main():
-    recipients = [
-        Recipient("Alice Thompson", 0.92, 3, 540, 150.0, False, 45.0),
-        Recipient("Ben Ortega",     0.85, 4, 210, 320.0, False, 78.0),
-        Recipient("Clara Johansson",0.78, 2, 890,  50.0, True,  92.0),
-        Recipient("David Kim",      0.95, 2, 1100, 80.0, False, 15.0),
-        Recipient("Elena Vasquez",  0.88, 4, 365, 500.0, False, 60.0),
-    ]
-
-    weights = MatchingWeights(
-        compatibility=0.25, urgency=0.25, waiting_time=0.15,
-        distance=0.15, pediatric=0.10, cpra=0.10,
+    # ---- Define the donor ----
+    donor = Donor(
+        abo="A+",
+        age=35,
+        bsa=1.80,
+        latitude=38.8838,    # Virginia Hospital Center, Arlington, VA
+        longitude=-77.1050,
     )
 
+    # ---- Path to recipient CSV ----
+    csv_path = os.path.join(os.path.dirname(__file__) or '.', 'recipients.csv')
+
+    # ---- Run the full pipeline ----
     np.random.seed(42)
     t0 = time.time()
 
-    result = match_heart_to_recipient(
-        recipients,
-        weights=weights,
+    result = match_heart_from_csv(
+        donor=donor,
+        csv_filepath=csv_path,
+        weights=MatchingWeights(
+            bsa_similarity=0.20,
+            urgency=0.25,
+            waiting_time=0.15,
+            distance=0.15,
+            pediatric=0.10,
+            cpra=0.15,
+        ),
+        max_travel_hours=5.0,
         qaoa_depth=5,
         penalty_strength=10.0,
         n_shots=4096,
@@ -824,8 +837,9 @@ def main():
     )
 
     elapsed = time.time() - t0
-    print_report(result, recipients, weights)
+    print_report(result, MatchingWeights(0.20, 0.25, 0.15, 0.15, 0.10, 0.15))
     print(f"\n  Total runtime: {elapsed:.2f}s")
+
 
 if __name__ == "__main__":
     main()
