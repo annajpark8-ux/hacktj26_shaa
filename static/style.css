@@ -70,16 +70,20 @@ header {
 }
 
 .logo-icon {
-  width: 36px;
+  width: 40px;       /* adjust to your logo's natural width */
   height: 36px;
-  position: relative;
   flex-shrink: 0;
+  overflow: hidden;
+  display: flex;
+  align-items: center;
 }
 
-.logo-icon svg {
+.logo-icon img {
   width: 100%;
   height: 100%;
-  filter: drop-shadow(0 0 8px rgba(79,159,255,0.6));
+  object-fit: contain;
+  object-position: left center;
+  display: block;
 }
 
 .logo-text {
