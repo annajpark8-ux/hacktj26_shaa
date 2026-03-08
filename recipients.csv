@@ -1,0 +1,101 @@
+Name,ABO,Age,BSA,CPRA,Waiting Time (days),Hospital Address,Urgency
+James Chen,O+,38,2.3,11,1232,"8901 W Lincoln Ave, West Allis, WI 53227",1
+Cecilia Vargas,A-,69,2.4,65,1557,"12605 E 16th Ave, Aurora, CO 80045",2
+Paula Lopes,O+,46,1.6,96,1478,"3800 Reservoir Rd NW, Washington, DC 20007",3
+Stefan Kovalev,A+,57,2.0,86,269,"110 Irving St NW, Washington, DC 20010",5
+Stefan Kovalev,O+,44,1.5,27,1652,"1600 Callowhill St, Philadelphia, PA 19130",4
+Luca Pellegrini,O+,33,2.1,45,1072,"251 E Huron St, Chicago, IL 60611",4
+Isla Robinson,O+,61,1.7,53,646,"55 Fruit St, Boston, MA 02114",3
+Valentina Greco,AB-,73,2.1,24,1028,"2650 Ridge Ave, Evanston, IL 60201",1
+Umar Hassan,B-,33,2.2,26,1933,"600 Highland Ave, Madison, WI 53792",2
+James Chen,AB-,62,2.2,23,1715,"550 N Jackson St, Janesville, WI 53548",5
+Conor Fitzgerald,B+,32,1.5,99,1667,"4700 S 30th St, Fort Smith, AR 72903",1
+Xiomara Flores,O+,58,2.4,74,925,"8901 W Lincoln Ave, West Allis, WI 53227",5
+Zachary Nkosi,AB+,62,1.7,84,1568,"2200 O'Farrell St, San Francisco, CA 94115",4
+Boris Petrov,B-,43,1.4,81,770,"1250 16th St, Santa Monica, CA 90404",2
+Xiu Lin,AB+,60,2.0,95,1372,"16233 SE 130th Ave, Clackamas, OR 97015",4
+Elif Yıldız,AB+,33,1.8,10,1279,"4650 Sunset Blvd, Los Angeles, CA 90027",5
+Bianca Russo,A+,22,2.3,88,499,"4400 Broadway St, Kansas City, MO 64111",1
+Noah Williams,A-,23,2.3,6,532,"702 Barnhill Dr, Indianapolis, IN 46202",1
+Javier Castillo,A-,43,1.7,47,122,"1501 N Campbell Ave, Tucson, AZ 85724",4
+Tara Okonkwo,A+,69,2.4,59,279,"5841 S Maryland Ave, Chicago, IL 60637",5
+Adam Szabo,B-,25,1.7,35,867,"111 S 11th St, Philadelphia, PA 19107",1
+Laura Bianchi,AB-,43,2.0,14,955,"747 52nd St, Oakland, CA 94609",4
+Samuel Adeyemi,AB-,58,1.7,19,330,"2500 Milvia St, Berkeley, CA 94704",1
+Serge Dupont,B-,29,2.4,82,833,"3400 Spruce St, Philadelphia, PA 19104",4
+Dario Esposito,O+,59,1.6,31,1208,"1200 N State St, Los Angeles, CA 90033",4
+Owen MacPherson,AB+,35,1.4,31,465,"3400 Spruce St, Philadelphia, PA 19104",1
+Priya Nair,A+,64,1.9,92,676,"2200 O'Farrell St, San Francisco, CA 94115",4
+Hiroshi Tanaka,O+,51,2.5,14,735,"506 6th St, Brooklyn, NY 11215",5
+Emmanuel Traoré,AB+,49,2.4,91,1010,"1 NW Martin Luther King Jr Blvd, Evansville, IN 47708",5
+Tara Okonkwo,AB-,28,2.2,92,732,"350 W Thomas Rd, Phoenix, AZ 85013",1
+Tara Okonkwo,AB+,44,2.4,59,1473,"2200 O'Farrell St, San Francisco, CA 94115",2
+Xena Papadopoulos,AB+,66,2.4,16,654,"9500 Euclid Ave, Cleveland, OH 44195",2
+James Chen,A+,19,2.0,15,867,"16233 SE 130th Ave, Clackamas, OR 97015",3
+Freya Eriksson,AB+,61,1.7,28,758,"757 Westwood Plaza, Los Angeles, CA 90095",1
+Olena Kovalenko,O+,46,2.2,57,365,"1364 Clifton Rd NE, Atlanta, GA 30322",5
+Grace Patel,B+,59,2.1,15,1371,"4700 S 30th St, Fort Smith, AR 72903",4
+Luca Pellegrini,AB+,55,1.8,45,470,"100 Medical Center Dr, Modesto, CA 95356",5
+Ingrid Holm,A+,42,1.5,11,593,"621 S New Ballas Rd, St. Louis, MO 63141",1
+Carlos Reyes,B+,35,2.2,54,1585,"100 Medical Center Dr, Modesto, CA 95356",1
+Natasha Romanov,B-,53,1.7,2,1897,"1131 SW Vermont St, Portland, OR 97219",5
+Quinn O'Brien,O-,25,2.4,70,1341,"3855 Health Sciences Dr, La Jolla, CA 92037",2
+Boris Petrov,A-,51,1.7,5,1832,"1250 16th St, Santa Monica, CA 90404",4
+Valentina Greco,B+,23,1.5,19,1708,"500 S 1400 E, Salt Lake City, UT 84112",5
+Kevin Park,B-,55,2.3,17,961,"4502 Medical Dr, San Antonio, TX 78229",1
+Grace Patel,O-,53,1.6,83,1540,"4650 Sunset Blvd, Los Angeles, CA 90027",1
+Xiomara Flores,O+,22,1.6,5,656,"4000 Crutcher St, Dallas, TX 75246",1
+Tara Okonkwo,A+,61,2.1,42,920,"9000 W Wisconsin Ave, Milwaukee, WI 53226",1
+Pablo Fuentes,A-,41,2.4,59,1070,"1400 NW 12th Ave, Miami, FL 33136",1
+Teresa Wójcik,O+,62,1.6,51,1920,"1400 NW 12th Ave, Miami, FL 33136",5
+Dario Esposito,A+,20,1.7,68,1697,"22 S Greene St, Baltimore, MD 21201",4
+Boris Petrov,O+,28,2.3,80,978,"300 Pasteur Dr, Stanford, CA 94305",5
+Tina Nakamura,B+,46,2.5,39,1305,"600 N Wolfe St, Baltimore, MD 21287",5
+Laura Bianchi,O-,28,2.0,82,404,"506 6th St, Brooklyn, NY 11215",5
+Wendy Achebe,B+,36,1.6,31,1608,"747 52nd St, Oakland, CA 94609",2
+Zoe Carmichael,B-,55,1.4,98,1106,"1 Ingalls Dr, Harvey, IL 60426",2
+Elena Vasquez,AB-,26,1.7,50,1065,"234 Goodman St, Cincinnati, OH 45219",5
+Emmanuel Traoré,A-,56,1.5,73,1532,"100 Medical Center Dr, Modesto, CA 95356",2
+Peter Ivanov,AB+,23,2.1,87,1265,"3181 SW Sam Jackson Park Rd, Portland, OR 97239",1
+Zachary Nkosi,AB+,27,1.5,79,144,"1600 Callowhill St, Philadelphia, PA 19130",4
+Teresa Wójcik,O+,51,2.0,85,576,"2200 O'Farrell St, San Francisco, CA 94115",5
+Serge Dupont,O-,63,2.2,53,353,"110 Irving St NW, Washington, DC 20010",5
+Zachary Nkosi,AB-,27,2.0,4,1469,"1 Ingalls Dr, Harvey, IL 60426",5
+Laura Bianchi,B-,35,1.6,49,70,"2000 Van Ness Ave, San Francisco, CA 94109",1
+Wolfgang Schäfer,B-,70,2.3,18,404,"747 52nd St, Oakland, CA 94609",4
+Priya Nair,B-,74,2.2,88,1194,"4000 Crutcher St, Dallas, TX 75246",5
+Hannah Novak,O+,51,2.2,23,1389,"1200 N State St, Los Angeles, CA 90033",4
+Qing Zhang,B+,43,1.5,22,1006,"12605 E 16th Ave, Aurora, CO 80045",5
+Laura Bianchi,A-,37,1.5,24,1721,"600 Highland Ave, Madison, WI 53792",5
+Henry Müller,B+,52,2.4,64,1837,"111 S 11th St, Philadelphia, PA 19107",3
+Wendy Achebe,A+,51,1.8,57,264,"929 NE 86th Ave, Portland, OR 97220",1
+Florian Huber,A+,34,1.7,94,1905,"350 W Thomas Rd, Phoenix, AZ 85013",3
+Tina Nakamura,A+,19,1.9,41,1228,"225 N Jackson Ave, San Jose, CA 95116",2
+Wendy Achebe,O+,26,2.1,28,1272,"55 Fruit St, Boston, MA 02114",1
+Noah Williams,AB-,72,2.5,4,190,"1388 Sutter St, San Francisco, CA 94109",1
+Ulrich Becker,AB-,41,1.7,0,1243,"2500 Milvia St, Berkeley, CA 94704",4
+Xavier Delacroix,B-,45,2.4,37,1451,"5555 W Las Positas Blvd, Pleasanton, CA 94588",3
+Hannah Novak,AB-,44,1.4,92,1161,"410 W 10th Ave, Columbus, OH 43210",3
+Xena Papadopoulos,A-,62,2.0,52,168,"3400 Spruce St, Philadelphia, PA 19104",4
+Gustavo Alves,O-,21,2.1,89,1046,"4502 Medical Dr, San Antonio, TX 78229",3
+Sasha Morozov,AB+,22,1.5,10,1871,"1100 Van Ness Ave, Fresno, CA 93721",4
+Thabo Dlamini,O-,33,1.6,9,1446,"18300 Roscoe Blvd, Northridge, CA 91328",1
+Stefan Kovalev,A-,45,1.9,83,274,"500 S 1400 E, Salt Lake City, UT 84112",5
+Quinn O'Brien,B-,56,2.5,10,1919,"1600 Callowhill St, Philadelphia, PA 19130",3
+Ingrid Holm,AB-,45,2.1,5,1917,"1600 Callowhill St, Philadelphia, PA 19130",1
+Natasha Romanov,B-,43,2.4,40,338,"600 Highland Ave, Madison, WI 53792",5
+Valentina Greco,B-,71,2.3,92,1601,"1740 W Taylor St, Chicago, IL 60612",4
+James Chen,A-,27,1.9,68,813,"462 First Ave, New York, NY 10016",1
+Fatima Khalil,B-,50,2.3,9,1187,"1200 N Elmwood Ave, Tulsa, OK 74106",1
+Cecilia Vargas,A-,48,1.4,83,890,"516 Carew St, Springfield, IL 62702",1
+Ingrid Holm,B+,44,1.5,84,1565,"75 Francis St, Boston, MA 02115",2
+Stefan Kovalev,AB-,64,2.3,80,1993,"270 Park Ave, Paterson, NJ 07504",1
+Greta Svensson,AB-,33,2.3,90,1590,"1 Children's Plaza, Dayton, OH 45404",4
+Javier Castillo,AB+,72,1.7,23,1862,"2200 O'Farrell St, San Francisco, CA 94115",3
+Nina Volkov,B+,36,2.0,97,1892,"28077 Smyth Dr, Valencia, CA 91355",5
+Pablo Fuentes,O-,49,2.1,32,180,"234 Goodman St, Cincinnati, OH 45219",4
+Diana Osei,A+,47,2.4,80,506,"655 W 8th St, Jacksonville, FL 32209",4
+Yusuf Al-Rashid,B+,66,2.1,57,1443,"300 Pasteur Dr, Stanford, CA 94305",3
+Teresa Wójcik,A+,43,1.9,77,1180,"1 Children's Plaza, Dayton, OH 45404",1
+Natasha Romanov,B+,34,1.8,62,100,"1400 NW 12th Ave, Miami, FL 33136",1
+Olivia Santos,O-,19,1.9,64,190,"3333 Burnet Ave, Cincinnati, OH 45229",4

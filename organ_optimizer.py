@@ -1,43 +1,5 @@
-"""
-================================================================================
-QAOA Heart-Organ Matching  —  Qiskit + AerSimulator Backend
-================================================================================
-
-WHAT THIS VERSION DOES DIFFERENTLY:
-    The previous "from-scratch" versions manually evolved a statevector
-    and sampled from it.  This version uses Qiskit's circuit model:
-
-    1. Builds a real QuantumCircuit with parameterized gates.
-    2. Runs it on AerSimulator (Qiskit Aer's shot-based simulator).
-    3. Uses Qiskit's Parameter binding for efficient re-evaluation
-       during the classical optimization loop.
-
-WHY THIS MATTERS:
-    • The circuit is now a first-class Qiskit object — you can
-      inspect it, draw it, transpile it for real hardware, or
-      swap AerSimulator for an IBM Quantum backend with one line.
-    • AerSimulator applies realistic noise models if configured,
-      so you can study how hardware noise affects matching quality.
-    • Gate-level decomposition (RZZ, RX) matches what a real QPU
-      executes, giving accurate depth/gate-count estimates.
-    • Parameter binding avoids rebuilding the circuit each optimizer
-      iteration — Qiskit compiles once and rebinds parameters, which
-      is significantly faster.
-
-INSTALL:
-    pip install qiskit qiskit-aer numpy scipy
-
-SWAP TO REAL HARDWARE:
-    Replace AerSimulator() with:
-        from qiskit_ibm_runtime import QiskitRuntimeService, SamplerV2
-        service = QiskitRuntimeService(channel="ibm_quantum")
-        backend = service.least_busy(min_num_qubits=n)
-    and run through SamplerV2.  The circuit, parameters, and
-    post-processing are identical.
-================================================================================
-"""
-
 import numpy as np
+import pandas as pd
 from collections import Counter
 from scipy.optimize import minimize
 from dataclasses import dataclass
@@ -124,50 +86,12 @@ def compute_composite_scores(
 # =============================================================================
 # 3. COST HAMILTONIAN ENCODING
 # =============================================================================
-#
-# The cost Hamiltonian for "select exactly one of n items" is:
-#
-#   C = Σ_i  c_i · Z̃_i  −  λ · (Σ_i Z̃_i − 1)²
-#
-# where Z̃_i = (I − Z_i)/2  maps |0⟩→0, |1⟩→1  (occupation number).
-#
-# Expanding the penalty:
-#   (Σ Z̃_i − 1)² = (Σ Z̃_i)² − 2(Σ Z̃_i) + 1
-#                  = Σ_i Z̃_i² + Σ_{i≠j} Z̃_i Z̃_j − 2 Σ_i Z̃_i + 1
-#                  = Σ_i Z̃_i(1 − 2) + Σ_{i≠j} Z̃_i Z̃_j + 1   [since Z̃² = Z̃]
-#                  = −Σ_i Z̃_i + Σ_{i≠j} Z̃_i Z̃_j + 1
-#
-# So C becomes:
-#   C = Σ_i (c_i + λ) Z̃_i  −  λ Σ_{i<j} Z̃_i Z̃_j  −  λ
-#
-# In terms of Pauli Z (where Z̃ = (I−Z)/2):
-#   Z̃_i Z̃_j = (I − Z_i − Z_j + Z_i Z_j) / 4
-#   Z̃_i      = (I − Z_i) / 2
-#
-# This gives us the gate decomposition:
-#   • Single-qubit Z rotations (RZ gates) for linear terms
-#   • Two-qubit ZZ interactions (RZZ gates) for quadratic terms
-#   • A global phase (ignorable)
-#
-# =============================================================================
 
 def _compute_hamiltonian_coefficients(
     composite_scores: np.ndarray,
     penalty_strength: float,
 ) -> Tuple[np.ndarray, np.ndarray, float]:
-    """
-    Decompose the cost Hamiltonian into Pauli Z / ZZ coefficients.
-
-    Returns:
-        h_linear:   shape (n,)      — coefficient of Z_i for each qubit
-        h_quadratic: shape (n, n)   — coefficient of Z_i Z_j (upper triangle)
-        h_offset:   float           — constant energy offset (ignorable)
-
-    The cost unitary e^{-iγC} is then:
-        Π_i       RZ(2γ · h_linear[i])  on qubit i
-        Π_{i<j}   RZZ(2γ · h_quadratic[i,j])  on qubits i,j
-        × global phase e^{-iγ · h_offset}
-    """
+    
     n = len(composite_scores)
     lam = penalty_strength
 
@@ -214,35 +138,7 @@ def build_qaoa_circuit(
     h_linear: np.ndarray,
     h_quadratic: np.ndarray,
 ) -> Tuple[QuantumCircuit, ParameterVector, ParameterVector]:
-    """
-    Build a parameterized QAOA circuit using Qiskit gates.
-
-    Architecture:
-        |0⟩^n → H^⊗n → [Cost Layer → Mixer Layer] × p → Measure
-
-    Cost layer (for parameter γ_l):
-        • RZ(2γ · h_linear[i])  on each qubit i         — single-qubit phase
-        • RZZ(2γ · h_quadratic[i,j])  on each pair i<j  — entangling interaction
-
-    Mixer layer (for parameter β_l):
-        • RX(2β)  on each qubit                          — transverse field
-
-    Total gate count per layer:
-        • n single-qubit RZ gates
-        • n(n-1)/2 two-qubit RZZ gates  (decomposed into 2 CX + 1 RZ each)
-        • n single-qubit RX gates
-
-    Args:
-        n: number of qubits (= number of candidates).
-        p: QAOA depth (number of layers).
-        h_linear: Z coefficients from Hamiltonian decomposition.
-        h_quadratic: ZZ coefficients (upper triangle).
-
-    Returns:
-        qc: the parameterized QuantumCircuit.
-        gammas: ParameterVector of length p.
-        betas: ParameterVector of length p.
-    """
+    
     # ---- Create parameter vectors ----
     # These are symbolic — Qiskit compiles the circuit once, then
     # we bind concrete values during each optimizer iteration.
@@ -388,10 +284,10 @@ def qaoa_optimize_qiskit(
     composite_scores: np.ndarray,
     p: int = 3,
     penalty_strength: float = 10.0,
-    n_shots: int = 4096,
-    n_shots_final: int = 16384,
+    n_shots: int = 1024,
+    n_shots_final: int = 8192,
     cvar_alpha: float = 0.25,
-    n_restarts: int = 20,
+    n_restarts: int = 10,
 ) -> Tuple[int, float, dict]:
     """
     Run QAOA on Qiskit's AerSimulator with shot-based measurement.
@@ -436,16 +332,6 @@ def qaoa_optimize_qiskit(
 
     # ---- 6c. Initialize AerSimulator ----
     #
-    # AerSimulator is Qiskit Aer's high-performance C++ simulator.
-    # method='automatic' lets it choose the best algorithm:
-    #   • statevector for small circuits
-    #   • matrix_product_state for deep/wide circuits
-    #   • stabilizer for Clifford-only circuits
-    #
-    # To add a noise model (simulating real hardware errors):
-    #   from qiskit_aer.noise import NoiseModel
-    #   noise = NoiseModel.from_backend(real_backend)
-    #   simulator = AerSimulator(noise_model=noise)
     simulator = AerSimulator(method='automatic')
 
     # ---- 6d. Precompute cost diagonal for post-processing ----
