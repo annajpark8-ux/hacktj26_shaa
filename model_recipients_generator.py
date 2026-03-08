@@ -141,8 +141,8 @@ def generate_recipients(n=100, filepath="recipients.csv", seed=42):
         "BSA": np.round(rng.uniform(1.4, 2.5, size=n), 1),
         "CPRA": rng.integers(0, 100, size=n),
         "Waiting_Time_Days": rng.integers(0, 2000, size=n),
-        "Latitude": rng.uniform(24.5, 49.5, size=n),
-        "Longitude": rng.uniform(-125.0, -67.0, size=n),
+        "Latitude": rng.uniform(29.5, 44.5, size=n),
+        "Longitude": rng.uniform(-113.0, -70.0, size=n),
         "Urgency": rng.integers(1, 6, size=n),
     })
 
