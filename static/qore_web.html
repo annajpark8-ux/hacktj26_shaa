@@ -1,0 +1,282 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>QAOA Heart-Organ Matching</title>
+<link rel="stylesheet" href="/static/style.css">
+<link href="https://fonts.googleapis.com/css2?family=DM+Serif+Display:ital@0;1&family=DM+Mono:wght@300;400;500&family=DM+Sans:wght@300;400;500&display=swap" rel="stylesheet">
+</head>
+<body>
+
+<header>
+  <div class="logo">
+    <div class="logo-icon">
+      <svg viewBox="0 0 36 36" fill="none" xmlns="http://www.w3.org/2000/svg">
+        <path d="M18 6C18 6 8 10 8 18C8 22.4 11.6 26 16 26H20C24.4 26 28 22.4 28 18C28 10 18 6 18 6Z" stroke="#4f9fff" stroke-width="1.5" fill="rgba(79,159,255,0.1)"/>
+        <circle cx="18" cy="18" r="3" fill="#4f9fff" opacity="0.8"/>
+        <line x1="18" y1="10" x2="18" y2="26" stroke="#4f9fff" stroke-width="0.75" stroke-dasharray="2 2" opacity="0.4"/>
+        <line x1="10" y1="18" x2="26" y2="18" stroke="#4f9fff" stroke-width="0.75" stroke-dasharray="2 2" opacity="0.4"/>
+        <circle cx="18" cy="10" r="1.5" fill="#c084fc" opacity="0.7"/>
+        <circle cx="18" cy="26" r="1.5" fill="#c084fc" opacity="0.7"/>
+        <circle cx="10" cy="18" r="1.5" fill="#c084fc" opacity="0.7"/>
+        <circle cx="26" cy="18" r="1.5" fill="#c084fc" opacity="0.7"/>
+      </svg>
+    </div>
+    <div class="logo-text">
+      QAOA Matching
+      <span>Quantum Heart Transplant</span>
+    </div>
+  </div>
+  <div class="status-pill">
+    <div class="status-dot"></div>
+    System Online
+  </div>
+</header>
+
+<nav>
+  <button class="on" onclick="tab(this,'about')">About</button>
+  <button onclick="tab(this,'match')">Match</button>
+</nav>
+
+<main>
+
+  <!-- ── ABOUT ── -->
+  <div id="about" class="page on">
+    <div class="about-hero">
+      <h2>Quantum-optimised<br><em>organ matching</em></h2>
+      <p>This system uses the Quantum Approximate Optimisation Algorithm (QAOA) running on Qiskit's AerSimulator to select the optimal heart transplant recipient from a pre-screened waitlist — balancing urgency, compatibility, fairness, and organ viability in a single pass.</p>
+    </div>
+
+    <div class="section-label">How it works</div>
+    <div class="about-cards">
+      <div class="about-card">
+        <div class="about-card-label">Step 01</div>
+        <h3>Hard Filtering</h3>
+        <p>Candidates are eliminated by ABO blood type incompatibility, travel time exceeding the ischaemic window, and BSA size mismatch.</p>
+      </div>
+      <div class="about-card">
+        <div class="about-card-label">Step 02</div>
+        <h3>Score Encoding</h3>
+        <p>Six clinical factors — urgency, BSA similarity, CPRA, wait time, distance, and paediatric status — are normalised into a cost Hamiltonian.</p>
+      </div>
+      <div class="about-card">
+        <div class="about-card-label">Step 03</div>
+        <h3>QAOA Circuit</h3>
+        <p>A parameterised quantum circuit is compiled once and optimised over many shots using CVaR as the objective to focus on high-quality solutions.</p>
+      </div>
+      <div class="about-card">
+        <div class="about-card-label">Step 04</div>
+        <h3>Decision</h3>
+        <p>A final high-shot measurement round produces a probability distribution; the majority-vote winner across valid (single-selection) bitstrings is selected.</p>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── MATCH ── -->
+  <div id="match" class="page">
+
+    <div class="section-label">Donor information</div>
+    <div class="form-block">
+      <div class="row" style="margin-bottom:16px">
+        <div class="field">
+          <label>Blood Type</label>
+          <select id="d_abo">
+            <option>A+</option><option>A-</option><option>B+</option><option>B-</option>
+            <option>AB+</option><option>AB-</option><option>O+</option><option>O-</option>
+          </select>
+        </div>
+        <div class="field">
+          <label>Age</label>
+          <input type="number" id="d_age" value="35">
+        </div>
+      </div>
+      <div class="row3" style="margin-bottom:16px">
+        <div class="field">
+          <label>BSA (m²)</label>
+          <input type="number" id="d_bsa" value="1.80" step="0.01">
+        </div>
+        <div class="field">
+          <label>Latitude</label>
+          <input type="number" id="d_lat" value="38.8838" step="0.0001">
+        </div>
+        <div class="field">
+          <label>Longitude</label>
+          <input type="number" id="d_lon" value="-77.1050" step="0.0001">
+        </div>
+      </div>
+      <div class="field">
+        <label>Max Travel Time (hours)</label>
+        <input type="number" id="max_h" value="5" step="0.5">
+      </div>
+    </div>
+
+    <div class="section-label">Algorithm settings</div>
+    <div class="form-block">
+      <details>
+        <summary>Advanced parameters</summary>
+        <div class="adv-grid">
+          <div class="field">
+            <label>QAOA Depth</label>
+            <input type="number" id="q_depth" value="5" min="1" max="10">
+          </div>
+          <div class="field">
+            <label>Restarts</label>
+            <input type="number" id="q_restarts" value="20" min="5">
+          </div>
+          <div class="field">
+            <label>Shots / eval</label>
+            <input type="number" id="q_shots" value="4096" min="512" step="512">
+          </div>
+          <div class="field">
+            <label>CVaR α</label>
+            <input type="number" id="q_alpha" value="0.25" min="0.05" max="1" step="0.05">
+          </div>
+        </div>
+      </details>
+    </div>
+
+    <button class="btn-run" id="btn" onclick="run()">
+      Run Quantum Match
+    </button>
+    <div class="err" id="err"></div>
+
+    <div id="output"></div>
+  </div>
+
+</main>
+
+<script>
+function tab(el, id) {
+  document.querySelectorAll('nav button').forEach(b => b.classList.remove('on'));
+  el.classList.add('on');
+  document.querySelectorAll('.page').forEach(p => p.classList.remove('on'));
+  document.getElementById(id).classList.add('on');
+}
+
+async function run() {
+  const btn = document.getElementById('btn');
+  btn.disabled = true;
+  btn.textContent = 'Running…';
+  document.getElementById('err').textContent = '';
+  document.getElementById('output').innerHTML = '';
+
+  const fd = new FormData();
+  fd.append('donor_abo',       document.getElementById('d_abo').value);
+  fd.append('donor_age',       document.getElementById('d_age').value);
+  fd.append('donor_bsa',       document.getElementById('d_bsa').value);
+  fd.append('donor_latitude',  document.getElementById('d_lat').value);
+  fd.append('donor_longitude', document.getElementById('d_lon').value);
+  fd.append('w_bsa',           '0.20');
+  fd.append('w_urgency',       '0.25');
+  fd.append('w_waiting',       '0.15');
+  fd.append('w_distance',      '0.15');
+  fd.append('w_pediatric',     '0.10');
+  fd.append('w_cpra',          '0.15');
+  fd.append('qaoa_depth',      document.getElementById('q_depth').value);
+  fd.append('n_shots',         document.getElementById('q_shots').value);
+  fd.append('n_shots_final',   '16384');
+  fd.append('cvar_alpha',      document.getElementById('q_alpha').value);
+  fd.append('n_restarts',      document.getElementById('q_restarts').value);
+  fd.append('max_travel_hours',document.getElementById('max_h').value);
+  fd.append('penalty_strength','10.0');
+
+  try {
+    const res = await fetch('/api/match', { method: 'POST', body: fd });
+    const d   = await res.json();
+    if (!res.ok) { document.getElementById('err').textContent = d.detail || 'Error'; return; }
+
+    const maxVotes = Math.max(...d.candidates.map(c => c.votes), 1);
+    const sorted   = [...d.candidates].sort((a, b) => b.votes - a.votes);
+
+    let h = `
+      <div class="winner-card">
+        <div class="winner-eyebrow">Selected Recipient</div>
+        <div class="winner-name">${d.winner_name}</div>
+        <div class="winner-meta">
+          <div class="winner-stat">
+            <div class="winner-stat-val">${d.winner_composite_score}</div>
+            <div class="winner-stat-label">Score</div>
+          </div>
+          <div class="winner-stat">
+            <div class="winner-stat-val">${d.candidates_after_filter} / ${d.total_candidates_csv}</div>
+            <div class="winner-stat-label">Passed filters</div>
+          </div>
+          <div class="winner-stat">
+            <div class="winner-stat-val">${d.runtime_seconds}s</div>
+            <div class="winner-stat-label">Runtime</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="section-label" style="margin-top:8px">Candidates</div>
+    `;
+
+    sorted.forEach(c => {
+      const pct = ((c.votes / maxVotes) * 100).toFixed(1);
+      h += `
+        <div class="cand ${c.is_winner ? 'win' : ''}">
+          <div class="cand-top">
+            <div class="cand-name">
+              ${c.name}
+              ${c.is_winner ? '<span class="tag winner-tag">Winner</span>' : ''}
+              ${c.is_child  ? '<span class="tag child-tag">Child</span>'  : ''}
+            </div>
+            <div class="cand-score">${c.composite_score}</div>
+          </div>
+          <div class="cand-meta">
+            <span>Urgency ${c.urgency_level}</span>
+            <span>BSA ${c.bsa_similarity}</span>
+            <span>${c.distance_time_hours}h travel</span>
+            <span>CPRA ${c.cpra_score}%</span>
+            <span>${c.waiting_time_days}d wait</span>
+            <span>${c.votes} votes (${(c.probability * 100).toFixed(1)}%)</span>
+          </div>
+          <div class="vote-bar-wrap">
+            <div class="vote-bar" style="width:${pct}%"></div>
+          </div>
+        </div>
+      `;
+    });
+
+    if (d.eliminated && d.eliminated.length > 0) {
+      h += `
+        <div class="elim-section">
+          <button class="elim-toggle" onclick="toggleElim(this)">
+            ▸ ${d.eliminated.length} candidate${d.eliminated.length > 1 ? 's' : ''} eliminated by filters
+          </button>
+          <div class="elim-list">
+            ${d.eliminated.map(e => `
+              <div class="elim-item">
+                <span class="elim-name">${e.name}</span>
+                <span>
+                  <span class="elim-reason">${e.reason}</span>
+                  <span class="elim-detail"> — ${e.detail}</span>
+                </span>
+              </div>
+            `).join('')}
+          </div>
+        </div>
+      `;
+    }
+
+    document.getElementById('output').innerHTML = h;
+
+  } catch (e) {
+    document.getElementById('err').textContent = 'Connection failed: ' + e.message;
+  } finally {
+    btn.disabled = false;
+    btn.textContent = 'Run Quantum Match';
+  }
+}
+
+function toggleElim(btn) {
+  const list = btn.nextElementSibling;
+  list.classList.toggle('open');
+  btn.textContent = list.classList.contains('open')
+    ? btn.textContent.replace('▸', '▾')
+    : btn.textContent.replace('▾', '▸');
+}
+</script>
+</body>
+</html>
