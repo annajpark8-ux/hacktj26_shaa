@@ -436,16 +436,6 @@ def qaoa_optimize_qiskit(
 
     # ---- 6c. Initialize AerSimulator ----
     #
-    # AerSimulator is Qiskit Aer's high-performance C++ simulator.
-    # method='automatic' lets it choose the best algorithm:
-    #   • statevector for small circuits
-    #   • matrix_product_state for deep/wide circuits
-    #   • stabilizer for Clifford-only circuits
-    #
-    # To add a noise model (simulating real hardware errors):
-    #   from qiskit_aer.noise import NoiseModel
-    #   noise = NoiseModel.from_backend(real_backend)
-    #   simulator = AerSimulator(noise_model=noise)
     simulator = AerSimulator(method='automatic')
 
     # ---- 6d. Precompute cost diagonal for post-processing ----
