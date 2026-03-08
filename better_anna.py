@@ -94,7 +94,7 @@ def normalize_scores(recipients: List[Recipient]) -> np.ndarray:
     cpras           = np.array([r.cpra_score for r in recipients])
 
     scores[:, 0] = compatibilities
-    scores[:, 1] = (urgencies - 1.0) / 3.0
+    scores[:, 1] = (6.0 - urgencies) / 5.0
 
     wt_min, wt_max = wait_times.min(), wait_times.max()
     scores[:, 2] = (wait_times - wt_min) / (wt_max - wt_min) if wt_max > wt_min else 0.5
