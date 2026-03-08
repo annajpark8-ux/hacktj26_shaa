@@ -388,10 +388,10 @@ def qaoa_optimize_qiskit(
     composite_scores: np.ndarray,
     p: int = 3,
     penalty_strength: float = 10.0,
-    n_shots: int = 4096,
-    n_shots_final: int = 16384,
+    n_shots: int = 1024,
+    n_shots_final: int = 8192,
     cvar_alpha: float = 0.25,
-    n_restarts: int = 20,
+    n_restarts: int = 10,
 ) -> Tuple[int, float, dict]:
     """
     Run QAOA on Qiskit's AerSimulator with shot-based measurement.
