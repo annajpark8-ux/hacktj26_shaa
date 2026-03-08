@@ -1,32 +1,3 @@
-"""
-================================================================================
-QAOA Heart-Organ Matching  —  Full CSV-to-Match Pipeline
-================================================================================
-
-PIPELINE:
-    1. Read donor info (ABO, age, BSA, lat/lon).
-    2. Read recipient CSV (name, abo, age, bsa, cpra, wait, lat, lon, urgency).
-    3. FILTER — eliminate incompatible candidates:
-         a. ABO blood type incompatibility
-         b. Travel time > 5 hours (haversine distance / transport speed)
-         c. Donor BSA < 70% of recipient BSA (undersized organ)
-    4. BUILD Recipients from surviving candidates, computing:
-         - bsa_similarity: how close donor/recipient BSA are (0–1)
-         - distance_time_hours: estimated travel time from coordinates
-         - is_child: age < 18
-    5. RUN QAOA to select the optimal recipient.
-
-INSTALL:
-    pip install numpy scipy qiskit qiskit-aer
-
-NOTE ON DISTANCE:
-    Travel time is estimated as haversine great-circle distance
-    divided by an average transport speed (default 80 km/h for
-    helicopter door-to-door).  Adjust TRANSPORT_SPEED_KMH for
-    your transport mode.
-================================================================================
-"""
-
 import csv
 import numpy as np
 from scipy.optimize import minimize
@@ -69,8 +40,6 @@ class CsvCandidate:
 @dataclass
 class Recipient:
     """
-    A filtered, QAOA-ready candidate.
-
     Fields:
         name:                patient name
         bsa_similarity:      how well the donor organ size matches (0–1)
@@ -108,7 +77,7 @@ def read_candidates_csv(filepath: str) -> List[CsvCandidate]:
     """
     Parse a CSV file into CsvCandidate objects.
 
-    Expected columns (case-insensitive, order-independent):
+    Expected columns
         name, abo, age, bsa, cpra, waiting_time_days,
         latitude, longitude, urgency
     """
@@ -139,16 +108,6 @@ def read_candidates_csv(filepath: str) -> List[CsvCandidate]:
 # =============================================================================
 # 3. ABO BLOOD TYPE COMPATIBILITY
 # =============================================================================
-#
-# Heart transplant ABO rules (recipient can receive from):
-#   O  can receive from:  O only
-#   A  can receive from:  A, O
-#   B  can receive from:  B, O
-#   AB can receive from:  A, B, AB, O  (universal recipient)
-#
-# Rh factor (+/-) is generally NOT a barrier for solid organ
-# transplants (unlike blood transfusions), so we strip it.
-# =============================================================================
 
 # Maps each recipient base type → set of compatible donor base types
 ABO_COMPATIBILITY = {
@@ -160,10 +119,6 @@ ABO_COMPATIBILITY = {
 
 
 def _strip_rh(abo: str) -> str:
-    """
-    Extract the base ABO type, ignoring Rh factor.
-    'A+' → 'A',  'AB-' → 'AB',  'O+' → 'O'
-    """
     return abo.replace('+', '').replace('-', '')
 
 
@@ -180,20 +135,7 @@ def is_abo_compatible(donor_abo: str, recipient_abo: str) -> bool:
 # 4. DISTANCE / TRAVEL TIME  —  Haversine + estimated transport speed
 # =============================================================================
 #
-# Since the CSV provides lat/lon directly, we just compute the
-# great-circle distance between donor and recipient hospitals
-# using the Haversine formula, then divide by an average transport
-# speed to estimate travel time.
-#
-# TRANSPORT_SPEED_KMH = 80 km/h is a conservative estimate for
-# helicopter organ transport (cruise speed ~250 km/h but total
-# door-to-door including prep, takeoff, landing, and ground
-# transport averages much lower).
-#
-# Adjust this constant if your transport mode differs:
-#   Fixed-wing aircraft:  ~200 km/h effective
-#   Ground ambulance:     ~60–80 km/h (varies by region/traffic)
-#   Helicopter:           ~80–120 km/h door-to-door
+# Haversine 80 km/h
 # =============================================================================
 
 TRANSPORT_SPEED_KMH = 80.0
@@ -244,20 +186,6 @@ def estimate_travel_time_hours(
 
 # =============================================================================
 # 5. BSA SIMILARITY
-# =============================================================================
-#
-# Body Surface Area matching ensures the donor heart is appropriately
-# sized for the recipient's body.
-#
-# Hard filter: donor BSA must be >= 70% of recipient BSA
-#   (an undersized organ can't support the recipient's circulation)
-#
-# Soft score: BSA similarity for QAOA ranking (0–1)
-#   We use:  similarity = 1 - |donor_bsa - recip_bsa| / max(donor_bsa, recip_bsa)
-#   This gives 1.0 for a perfect match and decreases as the sizes diverge.
-#   An oversized organ is generally acceptable (better than undersized),
-#   so this penalizes both directions but the hard filter already
-#   removed dangerously undersized cases.
 # =============================================================================
 
 def is_bsa_compatible(donor_bsa: float, recipient_bsa: float) -> bool:
@@ -461,13 +389,7 @@ def compute_composite_scores(
 # =============================================================================
 #
 # This uses Qiskit's QuantumCircuit with parameterized gates, run on
-# AerSimulator's shot-based backend.  The circuit is compiled once,
-# then parameter-bound each optimizer iteration for efficiency.
-#
-# To swap to real IBM hardware, replace AerSimulator() with:
-#   from qiskit_ibm_runtime import QiskitRuntimeService, SamplerV2
-#   service = QiskitRuntimeService(channel="ibm_quantum")
-#   backend = service.least_busy(min_num_qubits=n)
+# AerSimulator's shot-based backend. 
 # =============================================================================
 
 from qiskit import QuantumCircuit
