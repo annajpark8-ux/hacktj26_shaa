@@ -21,7 +21,7 @@ INSTALL:
 
     For the Qiskit version, also: pip install qiskit qiskit-aer
 
-NOTE ON DISTANCE:
+nd ON DISTANCE:
     Travel time is estimated as haversine great-circle distance
     divided by an average transport speed (default 80 km/h for
     helicopter door-to-door).  Adjust TRANSPORT_SPEED_KMH for
