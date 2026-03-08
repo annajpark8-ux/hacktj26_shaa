@@ -803,7 +803,6 @@ FRONTEND_HTML = r"""<!DOCTYPE html>
 .page.on{display:block}
 </style>
 
-
 </head>
 <body>
 
@@ -818,11 +817,16 @@ FRONTEND_HTML = r"""<!DOCTYPE html>
 </nav>
 
 <div id="about" class="page about on">
+  <h2>Problem</h2>
+  <p>Right now, 103,233 Americans are on the national transplant waiting list. On average, 13 people die every day waiting for an organ transplant, and more than 28,000 donated organs are wasted due to inefficiencies in the system</p>
+  <h2>What's the solution?</h2>
+  <p>Quantum Organ Recovery & Exchange, or QORE, optimizes organ donor-recipient matching by analyzing blood type, age, BSA, CPRA, waiting time, and transport distance. With quantum computing, all variables are evaluated parallely, finding optimal matches faster, saving more lives.</p>
   <h2>What is this?</h2>
   <p>YAPYAP</p>
 </div>
 
 <div id="match" class="page">
+
   <div class="row">
     <div class="field"><label>Blood Type</label><select id="d_abo"><option>A+</option><option>A-</option><option>B+</option><option>B-</option><option>AB+</option><option>AB-</option><option>O+</option><option>O-</option></select></div>
     <div class="field"><label>Age</label><input type="number" id="d_age" value="35"></div>
@@ -853,6 +857,7 @@ FRONTEND_HTML = r"""<!DOCTYPE html>
   <button class="go" id="btn" onclick="run()">Run Match</button>
   <div class="err" id="err"></div>
   <div id="output"></div>
+
 </div>
 
 <script>
