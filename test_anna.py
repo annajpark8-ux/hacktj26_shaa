@@ -827,15 +827,5 @@ def main():
     print_report(result, recipients, weights)
     print(f"\n  Total runtime: {elapsed:.2f}s")
 
-    # ---- Bonus: print the circuit diagram ----
-    # Rebuild a small version (p=1) for readable output
-    h_lin, h_quad, _ = _compute_hamiltonian_coefficients(
-        compute_composite_scores(recipients, weights), 10.0
-    )
-    qc_viz, _, _ = build_qaoa_circuit(len(recipients), 1, h_lin, h_quad)
-    print("\n  CIRCUIT DIAGRAM (p=1 for readability):")
-    print(qc_viz.draw(output='text', fold=120))
-
-
 if __name__ == "__main__":
     main()
