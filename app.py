@@ -62,10 +62,10 @@ class MatchingWeights:
     """Policy weights for the 6 QAOA factors."""
     bsa_similarity: float = 0.20   # organ size match
     urgency: float        = 0.25   # medical urgency
-    waiting_time: float   = 0.15   # fairness
-    distance: float       = 0.15   # organ viability (ischemic time)
+    waiting_time: float   = 0.18   # fairness
+    distance: float       = 0.10   # organ viability (ischemic time)
     pediatric: float      = 0.10   # pediatric priority
-    cpra: float           = 0.15   # sensitized patient priority
+    cpra: float           = 0.17   # sensitized patient priority
 
 
 # =============================================================================
@@ -298,17 +298,6 @@ def filter_and_build_recipients(
 # =============================================================================
 
 def normalize_scores(recipients: List[Recipient]) -> np.ndarray:
-    """
-    Normalize all 6 factors to [0,1]. Returns (n, 6) array.
-
-    Columns:
-        0: bsa_similarity     — already [0,1], pass through
-        1: urgency            — 1→1.0 (most urgent), 6→0.0 (INVERTED)
-        2: waiting_time       — min-max normalized (longer = higher)
-        3: distance_time      — INVERTED (closer = higher)
-        4: pediatric          — binary 0/1
-        5: cpra               — scale to [0,1] (higher = more priority)
-    """
     n = len(recipients)
     scores = np.zeros((n, 6))
 
@@ -614,7 +603,6 @@ def qaoa_optimize_qiskit(
     }
 
     return best_candidate, composite_scores[best_candidate], info
-
 
 
 # =============================================================================
