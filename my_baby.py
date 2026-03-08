@@ -15,10 +15,15 @@ import traceback
 
 # ---- FastAPI ----
 from fastapi import FastAPI, Form, HTTPException
+<<<<<<< Updated upstream
+=======
+from fastapi.responses import HTMLResponse
+>>>>>>> Stashed changes
 from fastapi.responses import HTMLResponse, FileResponse
 import uvicorn
 
 # =============================================================================
+<<<<<<< Updated upstream
 # 1. DATA MODELS
 # =============================================================================
 
@@ -617,6 +622,9 @@ CANDIDATES = read_candidates_csv(CSV_PATH)
 
 
 @app.get("/", response_class=HTMLResponse)
+=======
+@ -620,6 +620,10 @@ CANDIDATES = read_candidates_csv(CSV_PATH)
+>>>>>>> Stashed changes
 def serve_frontend():
     return FRONTEND_HTML
 
@@ -627,6 +635,7 @@ def serve_css():
 
 @app.get("/health")
 def health():
+<<<<<<< Updated upstream
     return {"status": "ok"}
 
 
@@ -797,6 +806,9 @@ async def api_match(
 
 FRONTEND_HTML = r"""<!DOCTYPE html>
 <html lang="en">
+=======
+@ -796,6 +800,7 @@ FRONTEND_HTML = r"""<!DOCTYPE html>
+>>>>>>> Stashed changes
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -804,6 +816,7 @@ FRONTEND_HTML = r"""<!DOCTYPE html>
 <title>QAOA Heart-Organ Matching</title>
 
 <style>
+<<<<<<< Updated upstream
 .page{display:none;padding:24px;max-width:700px}
 .page.on{display:block}
 </style>
@@ -825,6 +838,13 @@ FRONTEND_HTML = r"""<!DOCTYPE html>
   <h2>Problem</h2>
   <p>Right now, 103,233 Americans are on the national transplant waiting list. On average, 13 people die every day waiting for an organ transplant, and more than 28,000 donated organs are wasted due to inefficiencies in the system</p>
   <h2>What's the solution?</h2>
+=======
+@ -820,88 +825,88 @@
+  <h2>Problem</h2>
+  <p>Right now, 103,233 Americans are on the national transplant waiting list. On average, 13 people die every day waiting for an organ transplant, and more than 28,000 donated organs are wasted due to inefficiencies in the system</p>
+  <h2>What's the solution?</h2>
+  <p>Quantum Organ Recovery & Exchange, or QORE, optimizes organ donor-recipient matching by analyzing blood type, age, BSA, CPRA, waiting time, and transport distance. With quantum computing, all variables are evaluated parallely, finding optimal matches faster, saving more lives.</p>
+>>>>>>> Stashed changes
   <p>YAPYAP</p>
   <h2>What is this?</h2>
   <p>YAPYAP</p>
